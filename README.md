@@ -129,6 +129,31 @@ O script remove o fundo, recorta o conteúdo e exporta o lockup completo, o
 símbolo, o wordmark e o ícone do app. Só precisa ser rodado de novo se a logo
 original mudar.
 
+## Deploy na Vercel
+
+Em *Project → Settings → Environment Variables*:
+
+| Variável | Ambientes | Valor |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Production, Preview, Development | igual ao `.env.local` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Production, Preview, Development | igual ao `.env.local` |
+| `NEXT_PUBLIC_SITE_URL` | apenas Production | a URL final da aplicação |
+
+`NEXT_PUBLIC_SITE_URL` deve ficar **vazia em Preview**: cada deploy de preview tem
+uma URL própria, e `getSiteUrl()` cai no header `x-forwarded-host` quando a
+variável não existe, fazendo o link de recuperação apontar para o preview certo.
+
+Variáveis `NEXT_PUBLIC_*` são embutidas no bundle em tempo de build — alterar
+qualquer uma exige um novo deploy.
+
+Depois do primeiro deploy, atualize no Supabase (*Authentication → URL
+Configuration*):
+
+- **Site URL** → a URL de produção;
+- **Redirect URLs** → acrescente `https://<dominio>/auth/callback` e, se quiser
+  que a recuperação funcione nos previews, o padrão dos previews da Vercel
+  (`https://*.vercel.app/**`).
+
 ## Scripts
 
 | Comando | O que faz |

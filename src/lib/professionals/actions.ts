@@ -1,6 +1,6 @@
 "use server";
 
-import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
 import { getSessionUser } from "@/lib/auth/session";
@@ -25,6 +25,10 @@ function translateDbError(error: PostgrestError): string {
         return "O nome não pode ficar em branco.";
       }
       return "Algum valor informado não é aceito pelo sistema.";
+    case "P0002": // no_data_found — levantado por save_professional
+      return "Este profissional não existe mais. Recarregue a página.";
+    case "PGRST202":
+      return "A função save_professional não foi encontrada no banco. Aplique supabase/migrations.";
     case "PGRST205":
       return "A tabela de profissionais não foi encontrada. Verifique se o schema foi aplicado.";
     default:
@@ -43,168 +47,85 @@ async function requireSession() {
 }
 
 /**
- * Sincroniza `professional_regions` com a seleção do formulário.
+ * Grava o profissional e suas regiões pela RPC `save_professional`.
  *
- * Só o que mudou é tocado — as associações mantidas continuam com o
- * `created_at` original.
+ * A função do banco resolve tudo numa transação só: se as regiões falharem,
+ * o profissional também não é gravado. Ver
+ * supabase/migrations/0001_save_professional.sql.
  */
-async function syncRegions(
-  supabase: SupabaseClient,
-  professionalId: string,
-  regionIds: string[],
-): Promise<PostgrestError | null> {
-  const { data: current, error: readError } = await supabase
-    .from("professional_regions")
-    .select("region_id")
-    .eq("professional_id", professionalId);
+async function saveProfessional(
+  id: string | null,
+  formData: FormData,
+): Promise<ProfessionalFormState> {
+  const sessionError = await requireSession();
+  if (sessionError) return failure(sessionError);
 
-  if (readError) return readError;
-
-  const currentIds = new Set(
-    (current ?? []).map((row: { region_id: string }) => row.region_id),
-  );
-  const nextIds = new Set(regionIds);
-
-  const toRemove = [...currentIds].filter((id) => !nextIds.has(id));
-  const toAdd = [...nextIds].filter((id) => !currentIds.has(id));
-
-  if (toRemove.length > 0) {
-    const { error } = await supabase
-      .from("professional_regions")
-      .delete()
-      .eq("professional_id", professionalId)
-      .in("region_id", toRemove);
-
-    if (error) return error;
+  const parsed = parseProfessionalForm(formData);
+  if (!parsed.ok) {
+    return {
+      status: "error",
+      message: "Revise os campos destacados.",
+      fieldErrors: parsed.fieldErrors,
+      succeededAt: null,
+    };
   }
 
-  if (toAdd.length > 0) {
-    const { error } = await supabase.from("professional_regions").insert(
-      toAdd.map((regionId) => ({
-        professional_id: professionalId,
-        region_id: regionId,
-      })),
-    );
+  const supabase = await createClient();
+  const { payload } = parsed;
 
-    if (error) return error;
-  }
+  const { error } = await supabase.rpc("save_professional", {
+    p_id: id,
+    p_name: payload.name,
+    p_segment_id: payload.segment_id,
+    p_region_ids: parsed.regionIds,
+    p_email: payload.email,
+    p_instagram: payload.instagram,
+    p_phone: payload.phone,
+    p_address: payload.address,
+    p_postal_code: payload.postal_code,
+    p_city: payload.city,
+    p_state: payload.state,
+    p_birthday_day: payload.birthday_day,
+    p_birthday_month: payload.birthday_month,
+    p_notes: payload.notes,
+    p_is_active: payload.is_active,
+  });
 
-  return null;
+  if (error) return failure(translateDbError(error));
+
+  // Cadastrar um profissional não cria contato nem métrica de contato
+  // (spec, seção 27, regra 3). A RPC toca apenas professionals e
+  // professional_regions.
+  revalidatePath(PROFISSIONAIS_PATH);
+
+  return {
+    status: "success",
+    message: `Profissional "${payload.name}" ${id ? "atualizado" : "cadastrado"}.`,
+    fieldErrors: {},
+    succeededAt: Date.now(),
+  };
 }
 
 export async function createProfessionalAction(
   _prevState: ProfessionalFormState,
   formData: FormData,
 ): Promise<ProfessionalFormState> {
-  const sessionError = await requireSession();
-  if (sessionError) return failure(sessionError);
-
-  const parsed = parseProfessionalForm(formData);
-  if (!parsed.ok) {
-    return {
-      status: "error",
-      message: "Revise os campos destacados.",
-      fieldErrors: parsed.fieldErrors,
-      succeededAt: null,
-    };
-  }
-
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from("professionals")
-    .insert(parsed.payload)
-    .select("id")
-    .single();
-
-  if (error || !data) {
-    return failure(
-      error ? translateDbError(error) : "Não foi possível salvar. Tente novamente.",
-    );
-  }
-
-  const regionError = await syncRegions(supabase, data.id, parsed.regionIds);
-
-  // PostgREST não expõe transação entre requisições. Se as regiões falharem,
-  // desfaz o insert para não deixar um profissional pela metade.
-  if (regionError) {
-    await supabase.from("professionals").delete().eq("id", data.id);
-
-    return failure(
-      "Não foi possível salvar as regiões de atuação, então o cadastro foi desfeito. Tente novamente.",
-    );
-  }
-
-  // Cadastrar um profissional não cria contato nem métrica de contato
-  // (spec, seção 27, regra 3). Nada além destas duas tabelas é tocado aqui.
-  revalidatePath(PROFISSIONAIS_PATH);
-
-  return {
-    status: "success",
-    message: `Profissional "${parsed.payload.name}" cadastrado.`,
-    fieldErrors: {},
-    succeededAt: Date.now(),
-  };
+  return saveProfessional(null, formData);
 }
 
 export async function updateProfessionalAction(
   _prevState: ProfessionalFormState,
   formData: FormData,
 ): Promise<ProfessionalFormState> {
-  const sessionError = await requireSession();
-  if (sessionError) return failure(sessionError);
-
   const id = formData.get("id");
+
   if (typeof id !== "string" || !id) {
     return failure(
       "Profissional não identificado. Recarregue a página e tente de novo.",
     );
   }
 
-  const parsed = parseProfessionalForm(formData);
-  if (!parsed.ok) {
-    return {
-      status: "error",
-      message: "Revise os campos destacados.",
-      fieldErrors: parsed.fieldErrors,
-      succeededAt: null,
-    };
-  }
-
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from("professionals")
-    .update(parsed.payload)
-    .eq("id", id)
-    .select("id");
-
-  if (error) return failure(translateDbError(error));
-
-  // A RLS devolve zero linhas em vez de erro quando o update não é permitido.
-  if (!data || data.length === 0) {
-    return failure(
-      "Não foi possível salvar: o profissional não existe mais ou você não tem permissão.",
-    );
-  }
-
-  const regionError = await syncRegions(supabase, id, parsed.regionIds);
-
-  if (regionError) {
-    console.error("[profissionais] falha ao sincronizar regiões", regionError);
-    return failure(
-      "Os dados foram salvos, mas as regiões de atuação não. Reabra a edição e ajuste as regiões.",
-    );
-  }
-
-  revalidatePath(PROFISSIONAIS_PATH);
-
-  return {
-    status: "success",
-    message: `Profissional "${parsed.payload.name}" atualizado.`,
-    fieldErrors: {},
-    succeededAt: Date.now(),
-  };
+  return saveProfessional(id, formData);
 }
 
 export type ToggleProfessionalResult = { ok: boolean; message: string };

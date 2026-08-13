@@ -56,6 +56,10 @@ tabelas não existem lá.
    Ele cria as tabelas, os enums, os índices, as políticas de RLS, o bucket
    `proposal-pdfs` e as funções de apoio.
 
+   Em seguida rode, em ordem, os arquivos de `supabase/migrations/`. Eles são
+   as alterações feitas depois do schema base e são necessários para a
+   aplicação funcionar.
+
 2. **Criar o primeiro admin.** Em *Authentication → Users*, crie o usuário com
    e-mail e senha. O trigger `on_auth_user_created` cria um perfil inativo
    automaticamente. Promova-o pelo SQL Editor:
@@ -105,9 +109,11 @@ src/
     supabase/              clients de browser e servidor
     navigation.ts          itens do menu por perfil de acesso
   proxy.ts                 renovação de sessão e gate de rotas
-supabase/schema.sql        schema completo do MVP
+supabase/
+  schema.sql               schema base do MVP
+  migrations/              alterações aplicadas depois do schema base
 docs/                      especificação funcional
-scripts/                   utilitários de build de assets
+scripts/                   utilitários de build e de setup
 ```
 
 ## Identidade visual

@@ -33,7 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/profissionais",
     label: "Profissionais",
-    description: "Base de arquitetos, designers, construtores e corretores",
+    description: "Gerencie a carteira de profissionais da HORN",
     icon: Users,
     roles: ["admin"],
   },

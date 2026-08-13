@@ -1,14 +1,61 @@
 import type { Metadata } from "next";
 
-import { PagePlaceholder } from "@/components/layout/page-placeholder";
+import {
+  listProfessionals,
+  listRegions,
+  listSegments,
+} from "@/lib/professionals/queries";
+import {
+  parsePage,
+  parseProfessionalStatus,
+  type ProfessionalFilters,
+} from "@/lib/professionals/types";
+
+import { ProfessionalsManager } from "./professionals-manager";
 
 export const metadata: Metadata = { title: "Profissionais" };
 
-export default function ProfissionaisPage() {
+type ProfissionaisPageProps = {
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    segmento?: string;
+    regiao?: string;
+    pagina?: string;
+  }>;
+};
+
+export default async function ProfissionaisPage({
+  searchParams,
+}: ProfissionaisPageProps) {
+  const params = await searchParams;
+
+  // Os filtros vivem na URL: a consulta e a paginação acontecem no banco.
+  const filters: ProfessionalFilters = {
+    q: params.q?.trim() ?? "",
+    status: parseProfessionalStatus(params.status),
+    segmentId: params.segmento?.trim() ?? "",
+    regionId: params.regiao?.trim() ?? "",
+    page: parsePage(params.pagina),
+  };
+
+  const [list, segments, regions] = await Promise.all([
+    listProfessionals(filters),
+    listSegments(),
+    listRegions(),
+  ]);
+
   return (
-    <PagePlaceholder
-      href="/profissionais"
-      summary="Aqui ficará a base de profissionais, com busca por nome, filtros por segmento, região e status, cadastro, edição, inativação e as ações rápidas de registrar contato e criar projeto."
+    <ProfessionalsManager
+      professionals={list.professionals}
+      segments={segments}
+      regions={regions}
+      filters={filters}
+      filteredCount={list.filteredCount}
+      totalCount={list.totalCount}
+      page={list.page}
+      pageCount={list.pageCount}
+      loadError={list.error}
     />
   );
 }

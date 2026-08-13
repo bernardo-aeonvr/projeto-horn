@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   HORN — tokens de design
+   Dourado #CD9738 como destaque, grafite #282C30 como cor estrutural e
+   superfícies claras como base. O dourado é usado com parcimônia: estado
+   ativo, foco e ações primárias.
+   ========================================================================== */
+
+@theme {
+  --font-sans:
+    var(--font-poppins), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+
+  /* Dourado da marca */
+  --color-gold-50: #fdf8ef;
+  --color-gold-100: #f9edd5;
+  --color-gold-200: #f2d9a8;
+  --color-gold-300: #e8c076;
+  --color-gold-400: #dca94f;
+  --color-gold-500: #cd9738;
+  --color-gold-600: #b57f2c;
+  --color-gold-700: #926327;
+  --color-gold-800: #774f25;
+  --color-gold-900: #634222;
+  --color-gold-950: #382110;
+
+  /* Grafite da marca */
+  --color-graphite-50: #f6f7f8;
+  --color-graphite-100: #eceef0;
+  --color-graphite-200: #dcdfe3;
+  --color-graphite-300: #c1c7cd;
+  --color-graphite-400: #9aa3ac;
+  --color-graphite-500: #7b858f;
+  --color-graphite-600: #626b75;
+  --color-graphite-700: #50575f;
+  --color-graphite-800: #3d434a;
+  --color-graphite-900: #282c30;
+  --color-graphite-950: #1a1d20;
+
+  /* Superfícies */
+  --color-canvas: #f6f7f8;
+  --color-surface: #ffffff;
+
+  --shadow-card: 0 1px 2px 0 rgb(40 44 48 / 0.04), 0 1px 3px 0 rgb(40 44 48 / 0.06);
+  --shadow-popover:
+    0 4px 6px -2px rgb(40 44 48 / 0.05), 0 12px 24px -6px rgb(40 44 48 / 0.12);
+
+  --radius-card: 0.75rem;
+
+  --animate-pop-in: pop-in 130ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fade-in 150ms ease-out;
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-graphite-200;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-graphite-900 antialiased;
+    font-family: var(--font-sans);
+  }
+
+  /* Anel de foco único para todo o sistema. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-gold-500;
+  }
+
+  /* O autofill do Chrome pinta os inputs de azul; neutraliza mantendo a marca. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-graphite-900);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset;
+    caret-color: var(--color-graphite-900);
+  }
+}
+
+@layer utilities {
+  /* Esconde a barra de rolagem mantendo o scroll (usada na navegação lateral). */
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-graphite-200) transparent;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background-color: var(--color-graphite-200);
+    border-radius: 9999px;
+  }
+}

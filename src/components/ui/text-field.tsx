@@ -5,10 +5,25 @@ import { useId, useState, type ComponentProps, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
+/** Aparência compartilhada por todos os controles de formulário do sistema. */
+export const inputBaseClass = cn(
+  "h-11 w-full rounded-lg border border-graphite-200 bg-white px-3.5 text-sm text-graphite-900",
+  "placeholder:text-graphite-400",
+  "transition-colors hover:border-graphite-300",
+  "focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20",
+  "disabled:cursor-not-allowed disabled:bg-graphite-50 disabled:text-graphite-500",
+);
+
+/** Sobreposição aplicada quando o campo tem erro de validação. */
+export const inputErrorClass =
+  "border-red-300 hover:border-red-400 focus:border-red-500 focus:ring-red-500/20";
+
 type TextFieldProps = Omit<ComponentProps<"input">, "id"> & {
   label: string;
   /** Texto de apoio abaixo do campo. */
   hint?: ReactNode;
+  /** Mensagem de validação. Quando presente, substitui o hint. */
+  error?: string;
   /** Conteúdo alinhado à direita do rótulo (ex.: link "Esqueci minha senha"). */
   labelAction?: ReactNode;
 };
@@ -16,13 +31,14 @@ type TextFieldProps = Omit<ComponentProps<"input">, "id"> & {
 export function TextField({
   label,
   hint,
+  error,
   labelAction,
   className,
   type = "text",
   ...props
 }: TextFieldProps) {
   const id = useId();
-  const hintId = `${id}-hint`;
+  const messageId = `${id}-message`;
   const [revealed, setRevealed] = useState(false);
 
   const isPassword = type === "password";
@@ -41,14 +57,12 @@ export function TextField({
         <input
           id={id}
           type={inputType}
-          aria-describedby={hint ? hintId : undefined}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={hint || error ? messageId : undefined}
           className={cn(
-            "h-11 w-full rounded-lg border border-graphite-200 bg-white px-3.5 text-sm text-graphite-900",
-            "placeholder:text-graphite-400",
-            "transition-colors hover:border-graphite-300",
-            "focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20",
-            "disabled:cursor-not-allowed disabled:bg-graphite-50 disabled:text-graphite-500",
+            inputBaseClass,
             isPassword && "pr-11",
+            error && inputErrorClass,
             className,
           )}
           {...props}
@@ -70,8 +84,12 @@ export function TextField({
         ) : null}
       </div>
 
-      {hint ? (
-        <p id={hintId} className="text-xs text-graphite-500">
+      {error ? (
+        <p id={messageId} className="text-xs font-medium text-red-600">
+          {error}
+        </p>
+      ) : hint ? (
+        <p id={messageId} className="text-xs text-graphite-500">
           {hint}
         </p>
       ) : null}

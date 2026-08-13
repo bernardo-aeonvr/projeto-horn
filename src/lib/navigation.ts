@@ -54,7 +54,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/lojas",
     label: "Lojas",
-    description: "Empresas representadas pela HORN",
+    description: "Gerencie as empresas representadas pela HORN",
     icon: Store,
     roles: ["admin"],
   },

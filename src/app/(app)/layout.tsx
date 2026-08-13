@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ToastProvider } from "@/components/ui/toast";
 import { requireSessionUser } from "@/lib/auth/session";
 
 export default async function AppLayout({
@@ -14,18 +15,20 @@ export default async function AppLayout({
     cookieStore.get("horn-sidebar")?.value === "collapsed";
 
   return (
-    <AppShell
-      defaultCollapsed={defaultCollapsed}
-      user={{
-        name: user.name,
-        email: user.email,
-        initials: user.initials,
-        role: user.role,
-        roleLabel:
-          user.role === "admin" ? "Administrador" : (user.storeName ?? "Loja"),
-      }}
-    >
-      {children}
-    </AppShell>
+    <ToastProvider>
+      <AppShell
+        defaultCollapsed={defaultCollapsed}
+        user={{
+          name: user.name,
+          email: user.email,
+          initials: user.initials,
+          role: user.role,
+          roleLabel:
+            user.role === "admin" ? "Administrador" : (user.storeName ?? "Loja"),
+        }}
+      >
+        {children}
+      </AppShell>
+    </ToastProvider>
   );
 }

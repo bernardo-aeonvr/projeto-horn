@@ -9,6 +9,7 @@ import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { SlideOver } from "@/components/ui/slide-over";
 import { useToast } from "@/components/ui/toast";
+import type { StoreOption } from "@/lib/contacts/queries";
 import { setProfessionalActiveAction } from "@/lib/professionals/actions";
 import {
   PAGE_SIZE,
@@ -18,6 +19,7 @@ import {
   type Segment,
 } from "@/lib/professionals/types";
 
+import { ContactForm } from "../contatos/contact-form";
 import { ProfessionalDetails } from "./professional-details";
 import { ProfessionalForm } from "./professional-form";
 import { ProfessionalList } from "./professional-list";
@@ -27,6 +29,8 @@ type ProfessionalsManagerProps = {
   professionals: Professional[];
   segments: Segment[];
   regions: Region[];
+  /** Lojas ativas hoje, para pré-selecionar ao registrar um contato. */
+  activeStores: StoreOption[];
   filters: ProfessionalFilters;
   filteredCount: number;
   totalCount: number;
@@ -39,12 +43,15 @@ type Panel =
   | null
   | { mode: "new" }
   | { mode: "edit"; professional: Professional }
-  | { mode: "details"; professional: Professional };
+  | { mode: "details"; professional: Professional }
+  /** Registrar contato reaproveita o mesmo painel, sem empilhar dialogs. */
+  | { mode: "contact"; professional: Professional };
 
 export function ProfessionalsManager({
   professionals,
   segments,
   regions,
+  activeStores,
   filters,
   filteredCount,
   totalCount,
@@ -189,6 +196,32 @@ export function ProfessionalsManager({
             onEdit={() =>
               setPanel({ mode: "edit", professional: panel.professional })
             }
+            onRegisterContact={() =>
+              setPanel({ mode: "contact", professional: panel.professional })
+            }
+          />
+        ) : panel?.mode === "contact" ? (
+          <ContactForm
+            key={`contato-${panel.professional.id}`}
+            contact={null}
+            // O profissional já vem definido e travado: a ação partiu da ficha dele.
+            professionals={[
+              {
+                id: panel.professional.id,
+                name: panel.professional.name,
+                segment_name: panel.professional.segment?.name ?? null,
+              },
+            ]}
+            lockedProfessionalId={panel.professional.id}
+            activeStores={activeStores}
+            onSaved={(message) => {
+              showToast("success", message);
+              // Volta para a ficha, com o histórico recarregado.
+              setPanel({ mode: "details", professional: panel.professional });
+            }}
+            onCancel={() =>
+              setPanel({ mode: "details", professional: panel.professional })
+            }
           />
         ) : panel !== null ? (
           <ProfessionalForm
@@ -209,6 +242,7 @@ export function ProfessionalsManager({
 function panelTitle(panel: Panel): string {
   if (panel?.mode === "details") return panel.professional.name;
   if (panel?.mode === "edit") return "Editar profissional";
+  if (panel?.mode === "contact") return "Registrar contato";
   return "Novo profissional";
 }
 
@@ -217,5 +251,6 @@ function panelDescription(panel: Panel): string | undefined {
     return panel.professional.segment?.name ?? undefined;
   }
   if (panel?.mode === "edit") return panel.professional.name;
+  if (panel?.mode === "contact") return panel.professional.name;
   return "Adicione uma pessoa à carteira da HORN.";
 }

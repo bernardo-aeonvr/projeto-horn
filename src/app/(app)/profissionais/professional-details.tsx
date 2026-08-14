@@ -15,17 +15,20 @@ import {
 } from "@/lib/professionals/format";
 import type { Professional } from "@/lib/professionals/types";
 
+import { ProfessionalContactHistory } from "./professional-contact-history";
 import { StatusBadge } from "./professional-list";
 import { WhatsAppButton } from "./whatsapp-button";
 
 type ProfessionalDetailsProps = {
   professional: Professional;
   onEdit: () => void;
+  onRegisterContact: () => void;
 };
 
 export function ProfessionalDetails({
   professional,
   onEdit,
+  onRegisterContact,
 }: ProfessionalDetailsProps) {
   const whatsAppUrl = toWhatsAppUrl(professional.phone);
   const instagramUrl = toInstagramUrl(professional.instagram);
@@ -134,16 +137,12 @@ export function ProfessionalDetails({
             />
           </DetailSection>
 
-          {/*
-            Espaços reservados para os próximos módulos. Ficam vazios de
-            propósito — nada de dado fictício aqui.
-          */}
-          <UpcomingSection
-            icon={PhoneCall}
-            title="Contatos"
-            description="O histórico de contatos aparecerá aqui quando o módulo de Contatos estiver pronto."
+          <ProfessionalContactHistory
+            professionalId={professional.id}
+            onRegisterContact={onRegisterContact}
           />
 
+          {/* Espaço reservado para o próximo módulo — sem dado fictício. */}
           <UpcomingSection
             icon={FolderKanban}
             title="Projetos & Propostas"
@@ -153,14 +152,9 @@ export function ProfessionalDetails({
       </div>
 
       <footer className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-graphite-200/70 bg-white px-5 py-4 sm:px-6">
-        {/*
-          Registrar contato é o próximo módulo. O botão fica visível e
-          desabilitado para marcar o ponto de extensão, sem gravar nada.
-        */}
         <Button
           variant="secondary"
-          disabled
-          title="Disponível quando o módulo de Contatos estiver pronto"
+          onClick={onRegisterContact}
           className="mr-auto"
         >
           <PhoneCall className="size-4" aria-hidden />

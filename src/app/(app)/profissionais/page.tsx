@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { listActiveStores } from "@/lib/contacts/queries";
 import {
   listProfessionals,
   listRegions,
@@ -39,10 +40,12 @@ export default async function ProfissionaisPage({
     page: parsePage(params.pagina),
   };
 
-  const [list, segments, regions] = await Promise.all([
+  const [list, segments, regions, activeStores] = await Promise.all([
     listProfessionals(filters),
     listSegments(),
     listRegions(),
+    // Necessárias para pré-selecionar as lojas ao registrar contato pela ficha.
+    listActiveStores(),
   ]);
 
   return (
@@ -50,6 +53,7 @@ export default async function ProfissionaisPage({
       professionals={list.professionals}
       segments={segments}
       regions={regions}
+      activeStores={activeStores}
       filters={filters}
       filteredCount={list.filteredCount}
       totalCount={list.totalCount}

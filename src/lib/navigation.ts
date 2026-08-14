@@ -40,7 +40,8 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/contatos",
     label: "Contatos",
-    description: "Histórico de apresentações feitas aos profissionais",
+    description:
+      "Registre e acompanhe os contatos realizados com os profissionais",
     icon: PhoneCall,
     roles: ["admin"],
   },

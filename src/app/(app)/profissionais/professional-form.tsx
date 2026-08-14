@@ -8,6 +8,7 @@ import { ChipMultiSelect } from "@/components/ui/chip-multi-select";
 import { FormAlert } from "@/components/ui/form-alert";
 import { SelectField, TextareaField } from "@/components/ui/form-fields";
 import { TextField } from "@/components/ui/text-field";
+import { submittedList, submittedText } from "@/lib/form-values";
 import {
   createProfessionalAction,
   updateProfessionalAction,
@@ -69,10 +70,31 @@ export function ProfessionalForm({
   }, [state]);
 
   const errors = state.fieldErrors;
+  // Repovoa os campos: o React 19 reseta o formulário após a action.
+  const sent = state.values;
 
   return (
-    <form action={formAction} className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim px-5 py-5 sm:px-6">
+    <form
+      action={formAction}
+      /*
+        O React 19 chama form.reset() depois que a action roda. O evento é
+        cancelável, então barrá-lo preserva os campos de texto quando a
+        validação falha. Os `<select>` precisam do reparo extra que está em
+        SelectField, porque o reset deles não passa por aqui.
+      */
+      onReset={(event) => event.preventDefault()}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      {/*
+        O React 19 reseta os campos não controlados depois que a action roda,
+        e um <select> volta para a opção marcada na montagem. Remontar os
+        campos a cada tentativa malsucedida devolve tudo a partir de
+        state.values, sem o usuário perder o que digitou.
+      */}
+      <div
+        key={`${professional ? professional.id : "novo"}-${state.attemptedAt ?? 0}`}
+        className="min-h-0 flex-1 overflow-y-auto scrollbar-slim px-5 py-5 sm:px-6"
+      >
         {isEditing ? (
           <input type="hidden" name="id" value={professional.id} />
         ) : null}
@@ -88,7 +110,11 @@ export function ProfessionalForm({
             <TextField
               label="Nome"
               name="name"
-              defaultValue={professional?.name ?? ""}
+              defaultValue={submittedText(
+                sent,
+                "name",
+                professional?.name ?? "",
+              )}
               placeholder="Nome completo"
               error={errors.name}
               maxLength={160}
@@ -100,7 +126,11 @@ export function ProfessionalForm({
               <SelectField
                 label="Segmento"
                 name="segment_id"
-                defaultValue={professional?.segment_id ?? ""}
+                defaultValue={submittedText(
+                  sent,
+                  "segment_id",
+                  professional?.segment_id ?? "",
+                )}
                 error={errors.segment_id}
                 required
               >
@@ -117,11 +147,13 @@ export function ProfessionalForm({
               <SelectField
                 label="Status"
                 name="is_active"
-                defaultValue={
+                defaultValue={submittedText(
+                  sent,
+                  "is_active",
                   professional === null || professional.is_active
                     ? "true"
-                    : "false"
-                }
+                    : "false",
+                )}
               >
                 <option value="true">Ativo</option>
                 <option value="false">Inativo</option>
@@ -137,7 +169,7 @@ export function ProfessionalForm({
               <MaskedField
                 label="Telefone"
                 name="phone"
-                defaultValue={professional?.phone ?? ""}
+                defaultValue={submittedText(sent, "phone", professional?.phone ?? "")}
                 placeholder="(11) 99999-9999"
                 mask={maskPhoneInput}
                 error={errors.phone}
@@ -148,7 +180,11 @@ export function ProfessionalForm({
                 label="E-mail"
                 name="email"
                 type="email"
-                defaultValue={professional?.email ?? ""}
+                defaultValue={submittedText(
+                  sent,
+                  "email",
+                  professional?.email ?? "",
+                )}
                 placeholder="nome@email.com"
                 error={errors.email}
                 maxLength={160}
@@ -158,7 +194,11 @@ export function ProfessionalForm({
             <TextField
               label="Instagram"
               name="instagram"
-              defaultValue={professional?.instagram ?? ""}
+              defaultValue={submittedText(
+                sent,
+                "instagram",
+                professional?.instagram ?? "",
+              )}
               placeholder="@usuario"
               error={errors.instagram}
               maxLength={160}
@@ -170,7 +210,11 @@ export function ProfessionalForm({
             <TextField
               label="Endereço"
               name="address"
-              defaultValue={professional?.address ?? ""}
+              defaultValue={submittedText(
+                sent,
+                "address",
+                professional?.address ?? "",
+              )}
               placeholder="Rua, número, complemento"
               error={errors.address}
               maxLength={320}
@@ -180,7 +224,7 @@ export function ProfessionalForm({
               <MaskedField
                 label="CEP"
                 name="postal_code"
-                defaultValue={professional?.postal_code ?? ""}
+                defaultValue={submittedText(sent, "postal_code", professional?.postal_code ?? "")}
                 placeholder="00000-000"
                 mask={maskPostalCodeInput}
                 error={errors.postal_code}
@@ -190,7 +234,11 @@ export function ProfessionalForm({
               <TextField
                 label="Cidade"
                 name="city"
-                defaultValue={professional?.city ?? ""}
+                defaultValue={submittedText(
+                  sent,
+                  "city",
+                  professional?.city ?? "",
+                )}
                 placeholder="São Paulo"
                 error={errors.city}
                 maxLength={160}
@@ -199,7 +247,11 @@ export function ProfessionalForm({
               <SelectField
                 label="Estado"
                 name="state"
-                defaultValue={professional?.state ?? ""}
+                defaultValue={submittedText(
+                  sent,
+                  "state",
+                  professional?.state ?? "",
+                )}
                 error={errors.state}
               >
                 <option value="">—</option>
@@ -215,7 +267,11 @@ export function ProfessionalForm({
               name="region_ids"
               label="Regiões de atuação"
               options={regions}
-              defaultSelectedIds={professional?.regions.map((r) => r.id) ?? []}
+              defaultSelectedIds={submittedList(
+                sent,
+                "region_ids",
+                professional?.regions.map((r) => r.id) ?? [],
+              )}
               error={errors.regions}
               hint="Um profissional pode atuar em mais de uma região."
             />
@@ -234,7 +290,11 @@ export function ProfessionalForm({
                 <SelectField
                   label="Dia"
                   name="birthday_day"
-                  defaultValue={professional?.birthday_day?.toString() ?? ""}
+                  defaultValue={submittedText(
+                    sent,
+                    "birthday_day",
+                    professional?.birthday_day?.toString() ?? "",
+                  )}
                   aria-label="Dia do aniversário"
                 >
                   <option value="">—</option>
@@ -248,7 +308,11 @@ export function ProfessionalForm({
                 <SelectField
                   label="Mês"
                   name="birthday_month"
-                  defaultValue={professional?.birthday_month?.toString() ?? ""}
+                  defaultValue={submittedText(
+                    sent,
+                    "birthday_month",
+                    professional?.birthday_month?.toString() ?? "",
+                  )}
                 >
                   <option value="">—</option>
                   {MONTHS.map((month, index) => (
@@ -275,7 +339,11 @@ export function ProfessionalForm({
               name="notes"
               optional
               rows={3}
-              defaultValue={professional?.notes ?? ""}
+              defaultValue={submittedText(
+                sent,
+                "notes",
+                professional?.notes ?? "",
+              )}
               placeholder="Anotações internas sobre o profissional..."
               error={errors.notes}
               maxLength={2000}

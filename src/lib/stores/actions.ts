@@ -4,6 +4,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
 import { getSessionUser } from "@/lib/auth/session";
+import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
 import type { StoreFormState } from "./types";
@@ -34,8 +35,18 @@ function translateDbError(error: PostgrestError): string {
   }
 }
 
-function failure(message: string): StoreFormState {
-  return { status: "error", message, fieldErrors: {}, succeededAt: null };
+function failure(
+  message: string,
+  values: SubmittedValues | null = null,
+): StoreFormState {
+  return {
+    status: "error",
+    message,
+    fieldErrors: {},
+    succeededAt: null,
+    values,
+    attemptedAt: Date.now(),
+  };
 }
 
 /** Toda escrita exige sessão. A autorização por role é garantida pela RLS. */
@@ -58,6 +69,8 @@ export async function createStoreAction(
       message: "Revise os campos destacados.",
       fieldErrors: parsed.fieldErrors,
       succeededAt: null,
+      values: collectFormValues(formData, []),
+      attemptedAt: Date.now(),
     };
   }
 
@@ -73,6 +86,8 @@ export async function createStoreAction(
     message: `Loja "${parsed.payload.name}" cadastrada.`,
     fieldErrors: {},
     succeededAt: Date.now(),
+    values: null,
+    attemptedAt: null,
   };
 }
 
@@ -85,7 +100,9 @@ export async function updateStoreAction(
 
   const id = formData.get("id");
   if (typeof id !== "string" || !id) {
-    return failure("Loja não identificada. Recarregue a página e tente de novo.");
+    return failure(
+      "Loja não identificada. Recarregue a página e tente de novo.",
+    );
   }
 
   const parsed = parseStoreForm(formData);
@@ -95,6 +112,8 @@ export async function updateStoreAction(
       message: "Revise os campos destacados.",
       fieldErrors: parsed.fieldErrors,
       succeededAt: null,
+      values: collectFormValues(formData, []),
+      attemptedAt: Date.now(),
     };
   }
 
@@ -121,6 +140,8 @@ export async function updateStoreAction(
     message: `Loja "${parsed.payload.name}" atualizada.`,
     fieldErrors: {},
     succeededAt: Date.now(),
+    values: null,
+    attemptedAt: null,
   };
 }
 

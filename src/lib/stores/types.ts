@@ -1,3 +1,5 @@
+import type { SubmittedValues } from "@/lib/form-values";
+
 /**
  * Domínio Lojas — espelha public.stores (supabase/schema.sql, seção 2).
  *
@@ -37,7 +39,9 @@ export type StoreFilters = {
   category: string;
 };
 
-export function parseStatusFilter(value: string | undefined): StoreStatusFilter {
+export function parseStatusFilter(
+  value: string | undefined,
+): StoreStatusFilter {
   return STORE_STATUS_FILTERS.includes(value as StoreStatusFilter)
     ? (value as StoreStatusFilter)
     : "todas";
@@ -63,6 +67,13 @@ export type StoreFormState = {
    * para fechar o painel e disparar o toast.
    */
   succeededAt: number | null;
+  /** Valores enviados, devolvidos para repovoar o formulário após erro. */
+  values: SubmittedValues | null;
+  /**
+   * Muda a cada tentativa malsucedida. O formulário usa como `key` dos
+   * campos para remontá-los com os valores acima.
+   */
+  attemptedAt: number | null;
 };
 
 export const initialStoreFormState: StoreFormState = {
@@ -70,4 +81,6 @@ export const initialStoreFormState: StoreFormState = {
   message: null,
   fieldErrors: {},
   succeededAt: null,
+  values: null,
+  attemptedAt: null,
 };

@@ -1,6 +1,13 @@
 "use client";
 
-import { useId, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 
 import { inputBaseClass, inputErrorClass } from "@/components/ui/text-field";
 import {
@@ -65,6 +72,15 @@ type SelectFieldProps = Omit<ComponentProps<"select">, "id"> & {
   error?: string;
 };
 
+/**
+ * Select controlado internamente.
+ *
+ * Precisa ser controlado: o React 19 reseta os campos não controlados depois
+ * que a action de um formulário roda, e um `<select>` volta para a opção que
+ * estava marcada na montagem — mudar `defaultValue` no re-render não corrige,
+ * porque o atributo só é aplicado uma vez. Sem isso, qualquer erro de
+ * validação apagaria a escolha do usuário.
+ */
 export function SelectField({
   label,
   optional,
@@ -72,14 +88,58 @@ export function SelectField({
   error,
   className,
   children,
+  defaultValue,
+  value: controlledValue,
+  onChange,
   ...props
 }: SelectFieldProps) {
   const id = useId();
+  const selectRef = useRef<HTMLSelectElement>(null);
+  const [internalValue, setInternalValue] = useState(
+    () => (defaultValue as string | undefined) ?? "",
+  );
+
+  const isControlled = controlledValue !== undefined;
+  const value = isControlled ? controlledValue : internalValue;
+
+  /*
+    O React 19 devolve os campos do formulário ao estado inicial depois que a
+    action roda, e isso acontece após o commit. Num `<select>` o React não
+    reescreve o DOM porque, do ponto de vista dele, a prop `value` não mudou —
+    então a escolha do usuário sumiria a cada erro de validação. Este reparo
+    reafirma o valor logo depois, sem depender de quando o reset acontece.
+  */
+  useEffect(() => {
+    const node = selectRef.current;
+    if (!node) return;
+
+    const repair = () => {
+      if (node.value !== value) node.value = String(value ?? "");
+    };
+
+    repair();
+    queueMicrotask(repair);
+    const timer = setTimeout(repair, 0);
+
+    return () => clearTimeout(timer);
+  });
 
   return (
-    <FieldShell id={id} label={label} optional={optional} hint={hint} error={error}>
+    <FieldShell
+      id={id}
+      label={label}
+      optional={optional}
+      hint={hint}
+      error={error}
+    >
       <select
+        ref={selectRef}
         id={id}
+        value={value}
+        onChange={(event) => {
+          if (!isControlled) setInternalValue(event.target.value);
+          onChange?.(event);
+        }}
         aria-invalid={error ? true : undefined}
         aria-describedby={hint || error ? `${id}-message` : undefined}
         className={cn(
@@ -117,7 +177,13 @@ export function TextareaField({
   const id = useId();
 
   return (
-    <FieldShell id={id} label={label} optional={optional} hint={hint} error={error}>
+    <FieldShell
+      id={id}
+      label={label}
+      optional={optional}
+      hint={hint}
+      error={error}
+    >
       <textarea
         id={id}
         rows={rows}
@@ -226,7 +292,9 @@ export function CurrencyField({
           autoComplete="off"
           value={display}
           placeholder={placeholder}
-          onChange={(event) => setDisplay(maskCurrencyInput(event.target.value))}
+          onChange={(event) =>
+            setDisplay(maskCurrencyInput(event.target.value))
+          }
           aria-invalid={error ? true : undefined}
           aria-describedby={hint || error ? `${id}-message` : undefined}
           className={cn(inputBaseClass, "pl-10", error && inputErrorClass)}

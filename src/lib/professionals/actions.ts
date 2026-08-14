@@ -4,6 +4,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
 import { getSessionUser } from "@/lib/auth/session";
+import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
 import type { ProfessionalFormState } from "./types";
@@ -37,8 +38,18 @@ function translateDbError(error: PostgrestError): string {
   }
 }
 
-function failure(message: string): ProfessionalFormState {
-  return { status: "error", message, fieldErrors: {}, succeededAt: null };
+function failure(
+  message: string,
+  values: SubmittedValues | null = null,
+): ProfessionalFormState {
+  return {
+    status: "error",
+    message,
+    fieldErrors: {},
+    succeededAt: null,
+    values,
+    attemptedAt: Date.now(),
+  };
 }
 
 async function requireSession() {
@@ -67,6 +78,8 @@ async function saveProfessional(
       message: "Revise os campos destacados.",
       fieldErrors: parsed.fieldErrors,
       succeededAt: null,
+      values: collectFormValues(formData, ["region_ids"]),
+      attemptedAt: Date.now(),
     };
   }
 
@@ -103,6 +116,8 @@ async function saveProfessional(
     message: `Profissional "${payload.name}" ${id ? "atualizado" : "cadastrado"}.`,
     fieldErrors: {},
     succeededAt: Date.now(),
+    values: null,
+    attemptedAt: null,
   };
 }
 

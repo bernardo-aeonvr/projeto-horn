@@ -1,3 +1,5 @@
+import type { SubmittedValues } from "@/lib/form-values";
+
 /**
  * Domínio Profissionais — espelha public.professionals, public.segments,
  * public.regions e a relação public.professional_regions.
@@ -44,7 +46,11 @@ export type Professional = {
 export const PROFESSIONAL_COLUMNS =
   "id, name, segment_id, email, instagram, phone, address, postal_code, city, state, birthday_day, birthday_month, notes, is_active, created_at, updated_at, segment:segments(id, slug, name)";
 
-export const PROFESSIONAL_STATUS_FILTERS = ["todos", "ativos", "inativos"] as const;
+export const PROFESSIONAL_STATUS_FILTERS = [
+  "todos",
+  "ativos",
+  "inativos",
+] as const;
 export type ProfessionalStatusFilter =
   (typeof PROFESSIONAL_STATUS_FILTERS)[number];
 
@@ -66,9 +72,7 @@ export const PAGE_SIZE = 25;
 export function parseProfessionalStatus(
   value: string | undefined,
 ): ProfessionalStatusFilter {
-  return PROFESSIONAL_STATUS_FILTERS.includes(
-    value as ProfessionalStatusFilter,
-  )
+  return PROFESSIONAL_STATUS_FILTERS.includes(value as ProfessionalStatusFilter)
     ? (value as ProfessionalStatusFilter)
     : "todos";
 }
@@ -97,6 +101,13 @@ export type ProfessionalFormState = {
   message: string | null;
   fieldErrors: Partial<Record<ProfessionalFormField, string>>;
   succeededAt: number | null;
+  /** Valores enviados, devolvidos para repovoar o formulário após erro. */
+  values: SubmittedValues | null;
+  /**
+   * Muda a cada tentativa malsucedida. O formulário usa como `key` dos
+   * campos para remontá-los com os valores acima.
+   */
+  attemptedAt: number | null;
 };
 
 export const initialProfessionalFormState: ProfessionalFormState = {
@@ -104,4 +115,6 @@ export const initialProfessionalFormState: ProfessionalFormState = {
   message: null,
   fieldErrors: {},
   succeededAt: null,
+  values: null,
+  attemptedAt: null,
 };

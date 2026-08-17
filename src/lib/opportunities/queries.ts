@@ -1,0 +1,434 @@
+import { resolvePeriod } from "@/lib/contacts/period";
+import type { PeriodPreset } from "@/lib/contacts/types";
+import { toNumber } from "@/lib/stores/format";
+import { createClient } from "@/lib/supabase/server";
+
+import {
+  OPEN_STATUSES,
+  OPPORTUNITY_COLUMNS,
+  PAGE_SIZE,
+  type Opportunity,
+  type OpportunityFilters,
+  type OpportunityStatusEvent,
+  type OpportunityStore,
+  type ProposalAttachment,
+} from "./types";
+
+/** Escapa os curingas do LIKE para que o texto digitado seja literal. */
+function escapeLikePattern(value: string) {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/**
+ * Prepara o termo para entrar dentro de um `or(...)` do PostgREST.
+ *
+ * Ali a gramática é posicional: vírgula separa condições, parênteses delimitam
+ * a lista e o ponto separa coluna/operador/valor. Não há como escapar esses
+ * caracteres no meio do valor, então eles são removidos — buscar por vírgula
+ * ou parêntese no título de um projeto não é um caso real.
+ */
+function sanitizeForOrFilter(value: string) {
+  return escapeLikePattern(value).replace(/[,()."\\]/g, " ").trim();
+}
+
+type EmbeddedSegment = { name: string } | { name: string }[] | null;
+
+type EmbeddedProfessional =
+  | { id: string; name: string; segment: EmbeddedSegment }
+  | { id: string; name: string; segment: EmbeddedSegment }[]
+  | null;
+
+type EmbeddedStore =
+  | {
+      id: string;
+      name: string;
+      is_active: boolean;
+      default_commission_percent: number | string | null;
+    }
+  | {
+      id: string;
+      name: string;
+      is_active: boolean;
+      default_commission_percent: number | string | null;
+    }[]
+  | null;
+
+type OpportunityRow = Omit<
+  Opportunity,
+  | "professional"
+  | "store"
+  | "proposal_initial_value"
+  | "final_closed_value"
+  | "commission_percent"
+  | "commission_value"
+> & {
+  proposal_initial_value: number | string | null;
+  final_closed_value: number | string | null;
+  commission_percent: number | string | null;
+  commission_value: number | string | null;
+  professional: EmbeddedProfessional;
+  store: EmbeddedStore;
+};
+
+function first<T>(value: T | T[] | null): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+/**
+ * Converte a linha do PostgREST no tipo do domínio.
+ *
+ * `numeric` pode chegar como número ou string dependendo da precisão, então
+ * todos os valores monetários e percentuais passam por `toNumber`.
+ */
+function toOpportunity(row: OpportunityRow): Opportunity {
+  const professional = first(row.professional);
+  const store = first(row.store);
+  const segment = professional ? first(professional.segment) : null;
+
+  return {
+    ...row,
+    proposal_initial_value: toNumber(row.proposal_initial_value),
+    final_closed_value: toNumber(row.final_closed_value),
+    commission_percent: toNumber(row.commission_percent),
+    commission_value: toNumber(row.commission_value),
+    professional: professional
+      ? {
+          id: professional.id,
+          name: professional.name,
+          segment_name: segment?.name ?? null,
+        }
+      : null,
+    store: store
+      ? {
+          id: store.id,
+          name: store.name,
+          is_active: store.is_active,
+          default_commission_percent: toNumber(store.default_commission_percent),
+        }
+      : null,
+  };
+}
+
+/** Ids de profissionais e lojas cujo nome casa com o termo buscado. */
+async function findMatchingIds(term: string) {
+  const supabase = await createClient();
+  const pattern = `%${escapeLikePattern(term)}%`;
+
+  const [professionals, stores] = await Promise.all([
+    supabase.from("professionals").select("id").ilike("name", pattern).limit(200),
+    supabase.from("stores").select("id").ilike("name", pattern).limit(100),
+  ]);
+
+  return {
+    professionalIds: (professionals.data ?? []).map(
+      (row: { id: string }) => row.id,
+    ),
+    storeIds: (stores.data ?? []).map((row: { id: string }) => row.id),
+  };
+}
+
+export type OpportunityListResult = {
+  opportunities: Opportunity[];
+  filteredCount: number;
+  /** Total sem filtro — separa "base vazia" de "busca sem resultado". */
+  totalCount: number;
+  page: number;
+  pageCount: number;
+  error: string | null;
+};
+
+/**
+ * Lista as oportunidades paginadas, com os filtros aplicados no banco.
+ *
+ * A busca cobre profissional, loja e título da demanda. Como o PostgREST não
+ * faz `or` entre colunas de dois recursos embutidos diferentes, os nomes são
+ * resolvidos antes em ids e o `or` final roda sobre a própria tabela.
+ *
+ * A leitura usa a sessão do usuário, então a policy `opportunities_read`
+ * continua valendo: admin vê tudo, usuário de loja veria só a própria loja.
+ */
+export async function listOpportunities(
+  filters: OpportunityFilters,
+): Promise<OpportunityListResult> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .from("opportunities")
+    .select(OPPORTUNITY_COLUMNS, { count: "exact" });
+
+  const term = filters.q.trim();
+  if (term) {
+    const { professionalIds, storeIds } = await findMatchingIds(term);
+    const safeTerm = sanitizeForOrFilter(term);
+
+    const conditions: string[] = [];
+    if (safeTerm) conditions.push(`title.ilike.*${safeTerm}*`);
+    if (professionalIds.length > 0) {
+      conditions.push(`professional_id.in.(${professionalIds.join(",")})`);
+    }
+    if (storeIds.length > 0) {
+      conditions.push(`store_id.in.(${storeIds.join(",")})`);
+    }
+
+    // Nenhuma condição possível significa que nada pode casar.
+    if (conditions.length === 0) {
+      return {
+        opportunities: [],
+        filteredCount: 0,
+        totalCount: await countAll(),
+        page: filters.page,
+        pageCount: 1,
+        error: null,
+      };
+    }
+
+    query = query.or(conditions.join(","));
+  }
+
+  if (filters.status === "abertas") {
+    query = query.in("status", OPEN_STATUSES);
+  } else if (filters.status) {
+    query = query.eq("status", filters.status);
+  }
+
+  if (filters.storeId) query = query.eq("store_id", filters.storeId);
+  if (filters.professionalId) {
+    query = query.eq("professional_id", filters.professionalId);
+  }
+
+  // O período recorta a criação do projeto — a data em que a demanda entrou.
+  // Os KPIs por transição de status virão do histórico, no dashboard.
+  const { from, to } = resolvePeriod(
+    filters.period as PeriodPreset,
+    filters.from,
+    filters.to,
+  );
+  if (from) query = query.gte("created_at", from);
+  if (to) query = query.lt("created_at", to);
+
+  const offset = (filters.page - 1) * PAGE_SIZE;
+
+  const [listResponse, totalCount] = await Promise.all([
+    // Ordena pela última movimentação: o que andou recentemente vem primeiro.
+    query
+      .order("updated_at", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1),
+    countAll(),
+  ]);
+
+  if (listResponse.error) {
+    console.error("[projetos] falha ao listar", listResponse.error);
+    return {
+      opportunities: [],
+      filteredCount: 0,
+      totalCount: 0,
+      page: filters.page,
+      pageCount: 1,
+      error:
+        "Não foi possível carregar os projetos. Verifique a conexão e tente novamente.",
+    };
+  }
+
+  const rows = (listResponse.data ?? []) as unknown as OpportunityRow[];
+  const filteredCount = listResponse.count ?? rows.length;
+
+  return {
+    opportunities: rows.map(toOpportunity),
+    filteredCount,
+    totalCount,
+    page: filters.page,
+    pageCount: Math.max(1, Math.ceil(filteredCount / PAGE_SIZE)),
+    error: null,
+  };
+}
+
+async function countAll(): Promise<number> {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("opportunities")
+    .select("id", { count: "exact", head: true });
+
+  return count ?? 0;
+}
+
+/** Uma oportunidade com profissional e loja resolvidos. */
+export async function getOpportunity(id: string): Promise<Opportunity | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("opportunities")
+    .select(OPPORTUNITY_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return toOpportunity(data as unknown as OpportunityRow);
+}
+
+/** Projetos de um profissional, do mais recente para o mais antigo. */
+export async function listOpportunitiesByProfessional(
+  professionalId: string,
+): Promise<Opportunity[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("opportunities")
+    .select(OPPORTUNITY_COLUMNS)
+    .eq("professional_id", professionalId)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    console.error("[projetos] falha ao carregar projetos do profissional", error);
+    return [];
+  }
+
+  return (data as unknown as OpportunityRow[]).map(toOpportunity);
+}
+
+type HistoryRow = Omit<OpportunityStatusEvent, "changed_by_name">;
+
+/**
+ * Timeline de mudanças de status, da mais recente para a mais antiga.
+ *
+ * As linhas são escritas pelo trigger `opportunities_record_status_history` —
+ * a aplicação nunca insere aqui, e o `grant` do schema só concede SELECT.
+ *
+ * O nome de quem movimentou vem de uma segunda consulta: a FK de `changed_by`
+ * aponta para `auth.users`, não para `user_profiles`, então o PostgREST não
+ * consegue montar o embed sozinho.
+ */
+export async function listOpportunityHistory(
+  opportunityId: string,
+): Promise<OpportunityStatusEvent[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("opportunity_status_history")
+    .select("id, from_status, to_status, changed_at, changed_by")
+    .eq("opportunity_id", opportunityId)
+    .order("changed_at", { ascending: false });
+
+  if (error || !data) {
+    console.error("[projetos] falha ao carregar histórico", error);
+    return [];
+  }
+
+  const rows = data as unknown as HistoryRow[];
+  const names = await fetchUserNames(
+    rows.map((row) => row.changed_by).filter((id): id is string => Boolean(id)),
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    changed_by_name: row.changed_by ? (names.get(row.changed_by) ?? null) : null,
+  }));
+}
+
+async function fetchUserNames(ids: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return names;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("user_profiles")
+    .select("id, full_name")
+    .in("id", unique);
+
+  for (const row of (data ?? []) as { id: string; full_name: string | null }[]) {
+    if (row.full_name?.trim()) names.set(row.id, row.full_name.trim());
+  }
+
+  return names;
+}
+
+type AttachmentRow = Omit<ProposalAttachment, "size_bytes"> & {
+  size_bytes: number | string | null;
+};
+
+/** PDFs da proposta, do mais recente para o mais antigo. */
+export async function listProposalAttachments(
+  opportunityId: string,
+): Promise<ProposalAttachment[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("proposal_attachments")
+    .select("id, opportunity_id, storage_path, file_name, size_bytes, created_at")
+    .eq("opportunity_id", opportunityId)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    console.error("[projetos] falha ao carregar anexos", error);
+    return [];
+  }
+
+  return (data as unknown as AttachmentRow[]).map((row) => ({
+    ...row,
+    size_bytes: toNumber(row.size_bytes),
+  }));
+}
+
+type StoreOptionRow = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  default_commission_percent: number | string | null;
+};
+
+function toStoreOption(row: StoreOptionRow): OpportunityStore {
+  return {
+    id: row.id,
+    name: row.name,
+    is_active: row.is_active,
+    default_commission_percent: toNumber(row.default_commission_percent),
+  };
+}
+
+/**
+ * Lojas oferecidas ao criar um projeto.
+ *
+ * Traz as ativas — uma loja inativa deixou de ser representada e não deve
+ * receber demandas novas (spec, seção 17.3). Na edição, `includeId` garante
+ * que a loja já vinculada continue na lista mesmo depois de inativada, para
+ * não impedir a correção de um registro histórico.
+ */
+export async function listOpportunityStoreOptions(
+  includeId?: string | null,
+): Promise<OpportunityStore[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .from("stores")
+    .select("id, name, is_active, default_commission_percent")
+    .order("name", { ascending: true });
+
+  query = includeId
+    ? query.or(`is_active.eq.true,id.eq.${includeId}`)
+    : query.eq("is_active", true);
+
+  const { data, error } = await query;
+
+  if (error || !data) {
+    console.error("[projetos] falha ao carregar lojas", error);
+    return [];
+  }
+
+  return (data as StoreOptionRow[]).map(toStoreOption);
+}
+
+/** Todas as lojas, incluindo inativas, para o filtro da listagem. */
+export async function listAllStoreOptions(): Promise<OpportunityStore[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("stores")
+    .select("id, name, is_active, default_commission_percent")
+    .order("name", { ascending: true });
+
+  if (error || !data) return [];
+
+  return (data as StoreOptionRow[]).map(toStoreOption);
+}

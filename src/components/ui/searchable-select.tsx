@@ -25,6 +25,8 @@ type SearchableSelectProps = {
   required?: boolean;
   /** Trava a seleção — usado quando o formulário abre a partir de um registro. */
   locked?: boolean;
+  /** Avisa a mudança de seleção, para campos que dependem do item escolhido. */
+  onValueChange?: (id: string | null) => void;
 };
 
 /**
@@ -44,6 +46,7 @@ export function SearchableSelect({
   hint,
   required,
   locked = false,
+  onValueChange,
 }: SearchableSelectProps) {
   const id = useId();
   const [selectedId, setSelectedId] = useState<string | null>(defaultValue);
@@ -183,6 +186,7 @@ export function SearchableSelect({
                           setSelectedId(option.id);
                           setOpen(false);
                           setTerm("");
+                          onValueChange?.(option.id);
                         }}
                         className={cn(
                           "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",

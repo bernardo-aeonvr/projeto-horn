@@ -9,7 +9,7 @@ import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { SlideOver } from "@/components/ui/slide-over";
 import { useToast } from "@/components/ui/toast";
-import type { StoreOption } from "@/lib/contacts/queries";
+import type { OpportunityStore } from "@/lib/opportunities/types";
 import { setProfessionalActiveAction } from "@/lib/professionals/actions";
 import {
   PAGE_SIZE,
@@ -20,6 +20,7 @@ import {
 } from "@/lib/professionals/types";
 
 import { ContactForm } from "../contatos/contact-form";
+import { OpportunityForm } from "../projetos-propostas/opportunity-form";
 import { ProfessionalDetails } from "./professional-details";
 import { ProfessionalForm } from "./professional-form";
 import { ProfessionalList } from "./professional-list";
@@ -29,8 +30,8 @@ type ProfessionalsManagerProps = {
   professionals: Professional[];
   segments: Segment[];
   regions: Region[];
-  /** Lojas ativas hoje, para pré-selecionar ao registrar um contato. */
-  activeStores: StoreOption[];
+  /** Lojas ativas hoje: marcadas no contato e escolhidas no projeto. */
+  activeStores: OpportunityStore[];
   filters: ProfessionalFilters;
   filteredCount: number;
   totalCount: number;
@@ -45,7 +46,9 @@ type Panel =
   | { mode: "edit"; professional: Professional }
   | { mode: "details"; professional: Professional }
   /** Registrar contato reaproveita o mesmo painel, sem empilhar dialogs. */
-  | { mode: "contact"; professional: Professional };
+  | { mode: "contact"; professional: Professional }
+  /** Novo projeto iniciado pela ficha, com o profissional já travado. */
+  | { mode: "opportunity"; professional: Professional };
 
 export function ProfessionalsManager({
   professionals,
@@ -199,6 +202,32 @@ export function ProfessionalsManager({
             onRegisterContact={() =>
               setPanel({ mode: "contact", professional: panel.professional })
             }
+            onNewOpportunity={() =>
+              setPanel({ mode: "opportunity", professional: panel.professional })
+            }
+          />
+        ) : panel?.mode === "opportunity" ? (
+          <OpportunityForm
+            key={`projeto-${panel.professional.id}`}
+            opportunity={null}
+            // O profissional já vem definido e travado: a ação partiu da ficha.
+            professionals={[
+              {
+                id: panel.professional.id,
+                name: panel.professional.name,
+                segment_name: panel.professional.segment?.name ?? null,
+              },
+            ]}
+            lockedProfessionalId={panel.professional.id}
+            stores={activeStores}
+            onSaved={(message) => {
+              showToast("success", message);
+              // Volta para a ficha, com a lista de projetos recarregada.
+              setPanel({ mode: "details", professional: panel.professional });
+            }}
+            onCancel={() =>
+              setPanel({ mode: "details", professional: panel.professional })
+            }
           />
         ) : panel?.mode === "contact" ? (
           <ContactForm
@@ -243,6 +272,7 @@ function panelTitle(panel: Panel): string {
   if (panel?.mode === "details") return panel.professional.name;
   if (panel?.mode === "edit") return "Editar profissional";
   if (panel?.mode === "contact") return "Registrar contato";
+  if (panel?.mode === "opportunity") return "Novo projeto";
   return "Novo profissional";
 }
 
@@ -250,7 +280,12 @@ function panelDescription(panel: Panel): string | undefined {
   if (panel?.mode === "details") {
     return panel.professional.segment?.name ?? undefined;
   }
-  if (panel?.mode === "edit") return panel.professional.name;
-  if (panel?.mode === "contact") return panel.professional.name;
+  if (
+    panel?.mode === "edit" ||
+    panel?.mode === "contact" ||
+    panel?.mode === "opportunity"
+  ) {
+    return panel.professional.name;
+  }
   return "Adicione uma pessoa à carteira da HORN.";
 }

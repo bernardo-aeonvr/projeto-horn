@@ -2,7 +2,7 @@
 
 // Esta versão do lucide não traz mais ícones de marca, então o Instagram é
 // representado pelo arroba, que é como o perfil é escrito na interface.
-import { AtSign, FolderKanban, Mail, Pencil, PhoneCall } from "lucide-react";
+import { AtSign, FolderPlus, Mail, Pencil, PhoneCall } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,18 +17,21 @@ import type { Professional } from "@/lib/professionals/types";
 
 import { ProfessionalContactHistory } from "./professional-contact-history";
 import { StatusBadge } from "./professional-list";
+import { ProfessionalOpportunities } from "./professional-opportunities";
 import { WhatsAppButton } from "./whatsapp-button";
 
 type ProfessionalDetailsProps = {
   professional: Professional;
   onEdit: () => void;
   onRegisterContact: () => void;
+  onNewOpportunity: () => void;
 };
 
 export function ProfessionalDetails({
   professional,
   onEdit,
   onRegisterContact,
+  onNewOpportunity,
 }: ProfessionalDetailsProps) {
   const whatsAppUrl = toWhatsAppUrl(professional.phone);
   const instagramUrl = toInstagramUrl(professional.instagram);
@@ -142,11 +145,14 @@ export function ProfessionalDetails({
             onRegisterContact={onRegisterContact}
           />
 
-          {/* Espaço reservado para o próximo módulo — sem dado fictício. */}
-          <UpcomingSection
-            icon={FolderKanban}
-            title="Projetos & Propostas"
-            description="As oportunidades geradas por este profissional aparecerão aqui."
+          {/*
+            Contato e projeto são coisas diferentes: registrar um contato não
+            cria projeto nenhum, e um projeto só existe quando há demanda
+            concreta (spec, seção 27).
+          */}
+          <ProfessionalOpportunities
+            professionalId={professional.id}
+            onNewOpportunity={onNewOpportunity}
           />
         </div>
       </div>
@@ -159,6 +165,11 @@ export function ProfessionalDetails({
         >
           <PhoneCall className="size-4" aria-hidden />
           Registrar contato
+        </Button>
+
+        <Button variant="secondary" onClick={onNewOpportunity}>
+          <FolderPlus className="size-4" aria-hidden />
+          Novo projeto
         </Button>
 
         <Button onClick={onEdit}>
@@ -215,30 +226,5 @@ function DetailRow({
         {value?.trim() ? value : <span className="text-graphite-400">—</span>}
       </dd>
     </div>
-  );
-}
-
-function UpcomingSection({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: typeof PhoneCall;
-  title: string;
-  description: string;
-}) {
-  return (
-    <section className="rounded-xl border border-dashed border-graphite-200 bg-graphite-50/50 px-4 py-5">
-      <div className="flex items-center gap-2">
-        <Icon className="size-4 text-graphite-400" aria-hidden />
-        <h3 className="text-sm font-medium text-graphite-700">{title}</h3>
-        <span className="ml-auto rounded-full bg-white px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-graphite-500">
-          Em breve
-        </span>
-      </div>
-      <p className="mt-2 text-xs leading-relaxed text-graphite-500">
-        {description}
-      </p>
-    </section>
   );
 }

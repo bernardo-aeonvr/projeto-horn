@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, Pencil, Power, PowerOff } from "lucide-react";
+import { FolderKanban, Loader2, Pencil, Power, PowerOff } from "lucide-react";
+import Link from "next/link";
 import { useTransition } from "react";
 
 import { formatCurrency, formatPercent } from "@/lib/stores/format";
@@ -52,6 +53,11 @@ function RowActions({
 }) {
   const toggleLabel = store.is_active ? "Inativar" : "Ativar";
   const ToggleIcon = store.is_active ? PowerOff : Power;
+  /*
+    Acesso contextual aos projetos da loja: leva à tela de Projetos & Propostas
+    já filtrada. Evita transformar a tela de Lojas em dashboard nesta etapa.
+  */
+  const projectsHref = `/projetos-propostas?loja=${store.id}`;
 
   if (variant === "card") {
     return (
@@ -64,6 +70,13 @@ function RowActions({
           <Pencil className="size-3.5" aria-hidden />
           Editar
         </button>
+        <Link
+          href={projectsHref}
+          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50"
+        >
+          <FolderKanban className="size-3.5" aria-hidden />
+          Projetos
+        </Link>
         <button
           type="button"
           onClick={() => onToggleActive(store)}
@@ -83,6 +96,15 @@ function RowActions({
 
   return (
     <div className="flex items-center justify-end gap-1">
+      <Link
+        href={projectsHref}
+        title="Projetos & Propostas"
+        aria-label={`Ver projetos de ${store.name}`}
+        className="flex size-9 items-center justify-center rounded-lg text-graphite-500 transition-colors hover:bg-graphite-100 hover:text-graphite-900"
+      >
+        <FolderKanban className="size-4" aria-hidden />
+      </Link>
+
       <button
         type="button"
         onClick={() => onEdit(store)}

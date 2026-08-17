@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { listActiveStores } from "@/lib/contacts/queries";
+import { listOpportunityStoreOptions } from "@/lib/opportunities/queries";
 import {
   listProfessionals,
   listRegions,
@@ -44,8 +44,10 @@ export default async function ProfissionaisPage({
     listProfessionals(filters),
     listSegments(),
     listRegions(),
-    // Necessárias para pré-selecionar as lojas ao registrar contato pela ficha.
-    listActiveStores(),
+    // Usadas na ficha para marcar as lojas apresentadas em um contato e para
+    // escolher a loja de um projeto novo. O percentual de comissão vem junto
+    // para o formulário de projeto explicar o que ficará gravado.
+    listOpportunityStoreOptions(),
   ]);
 
   return (

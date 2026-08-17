@@ -48,7 +48,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/projetos-propostas",
     label: "Projetos & Propostas",
-    description: "Acompanhamento das oportunidades por loja",
+    description: "Acompanhe as demandas e propostas comerciais da HORN",
     icon: FolderKanban,
     roles: ["admin", "store"],
   },

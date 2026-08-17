@@ -254,6 +254,10 @@ type AdornedInputProps = {
   error?: string;
   hint?: ReactNode;
   placeholder?: string;
+  /** Marca o campo como obrigatório (some o sufixo "(opcional)"). */
+  required?: boolean;
+  /** Avisa o valor normalizado a cada digitação, para cálculos ao vivo. */
+  onValueChange?: (value: number | null) => void;
 };
 
 /**
@@ -269,6 +273,8 @@ export function CurrencyField({
   error,
   hint,
   placeholder = "0,00",
+  required,
+  onValueChange,
 }: AdornedInputProps) {
   const id = useId();
   const [display, setDisplay] = useState(() =>
@@ -278,7 +284,13 @@ export function CurrencyField({
   const numericValue = parseCurrencyInput(display);
 
   return (
-    <FieldShell id={id} label={label} optional hint={hint} error={error}>
+    <FieldShell
+      id={id}
+      label={label}
+      optional={!required}
+      hint={hint}
+      error={error}
+    >
       <div className="relative">
         <span
           aria-hidden
@@ -292,9 +304,11 @@ export function CurrencyField({
           autoComplete="off"
           value={display}
           placeholder={placeholder}
-          onChange={(event) =>
-            setDisplay(maskCurrencyInput(event.target.value))
-          }
+          onChange={(event) => {
+            const masked = maskCurrencyInput(event.target.value);
+            setDisplay(masked);
+            onValueChange?.(parseCurrencyInput(masked));
+          }}
           aria-invalid={error ? true : undefined}
           aria-describedby={hint || error ? `${id}-message` : undefined}
           className={cn(inputBaseClass, "pl-10", error && inputErrorClass)}
@@ -322,6 +336,8 @@ export function PercentField({
   error,
   hint,
   placeholder = "0",
+  required,
+  onValueChange,
 }: AdornedInputProps) {
   const id = useId();
   const [display, setDisplay] = useState(() =>
@@ -331,7 +347,13 @@ export function PercentField({
   const numericValue = parsePercentInput(display);
 
   return (
-    <FieldShell id={id} label={label} optional hint={hint} error={error}>
+    <FieldShell
+      id={id}
+      label={label}
+      optional={!required}
+      hint={hint}
+      error={error}
+    >
       <div className="relative">
         <input
           id={id}
@@ -339,7 +361,11 @@ export function PercentField({
           autoComplete="off"
           value={display}
           placeholder={placeholder}
-          onChange={(event) => setDisplay(maskPercentInput(event.target.value))}
+          onChange={(event) => {
+            const masked = maskPercentInput(event.target.value);
+            setDisplay(masked);
+            onValueChange?.(parsePercentInput(masked));
+          }}
           aria-invalid={error ? true : undefined}
           aria-describedby={hint || error ? `${id}-message` : undefined}
           className={cn(inputBaseClass, "pr-9", error && inputErrorClass)}

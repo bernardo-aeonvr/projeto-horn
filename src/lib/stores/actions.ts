@@ -11,6 +11,7 @@ import type { StoreFormState } from "./types";
 import { parseStoreForm } from "./validation";
 
 const LOJAS_PATH = "/lojas";
+const DASHBOARD_PATH = "/dashboard";
 
 /** Traduz os erros do Postgres/PostgREST que o usuário pode realmente causar. */
 function translateDbError(error: PostgrestError): string {
@@ -80,6 +81,8 @@ export async function createStoreAction(
   if (error) return failure(translateDbError(error));
 
   revalidatePath(LOJAS_PATH);
+  // A loja aparece no comparativo e no filtro do dashboard.
+  revalidatePath(DASHBOARD_PATH);
 
   return {
     status: "success",
@@ -134,6 +137,8 @@ export async function updateStoreAction(
   }
 
   revalidatePath(LOJAS_PATH);
+  // A loja aparece no comparativo e no filtro do dashboard.
+  revalidatePath(DASHBOARD_PATH);
 
   return {
     status: "success",
@@ -178,6 +183,8 @@ export async function setStoreActiveAction(
   }
 
   revalidatePath(LOJAS_PATH);
+  // A loja aparece no comparativo e no filtro do dashboard.
+  revalidatePath(DASHBOARD_PATH);
 
   return {
     ok: true,

@@ -13,6 +13,7 @@ import { parseContactForm } from "./validation";
 
 const CONTATOS_PATH = "/contatos";
 const PROFISSIONAIS_PATH = "/profissionais";
+const DASHBOARD_PATH = "/dashboard";
 
 function translateDbError(error: PostgrestError): string {
   // A RPC register_contact levanta exceções sem SQLSTATE próprio, então a
@@ -64,6 +65,8 @@ function revalidate() {
   revalidatePath(CONTATOS_PATH);
   // O histórico do profissional muda junto.
   revalidatePath(PROFISSIONAIS_PATH);
+  // Contato entra direto em "Profissionais contatados" e no alcance por loja.
+  revalidatePath(DASHBOARD_PATH);
 }
 
 /**

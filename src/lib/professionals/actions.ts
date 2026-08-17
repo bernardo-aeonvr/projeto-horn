@@ -11,6 +11,7 @@ import type { ProfessionalFormState } from "./types";
 import { parseProfessionalForm } from "./validation";
 
 const PROFISSIONAIS_PATH = "/profissionais";
+const DASHBOARD_PATH = "/dashboard";
 
 function translateDbError(error: PostgrestError): string {
   switch (error.code) {
@@ -110,6 +111,8 @@ async function saveProfessional(
   // (spec, seção 27, regra 3). A RPC toca apenas professionals e
   // professional_regions.
   revalidatePath(PROFISSIONAIS_PATH);
+  // A carteira alimenta os totais e a distribuição do dashboard.
+  revalidatePath(DASHBOARD_PATH);
 
   return {
     status: "success",
@@ -175,6 +178,8 @@ export async function setProfessionalActiveAction(
   }
 
   revalidatePath(PROFISSIONAIS_PATH);
+  // A carteira alimenta os totais e a distribuição do dashboard.
+  revalidatePath(DASHBOARD_PATH);
 
   return {
     ok: true,

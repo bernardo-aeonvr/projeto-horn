@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { requireAdminUser } from "@/lib/auth/session";
 import { listOpportunityStoreOptions } from "@/lib/opportunities/queries";
 import {
   listProfessionals,
@@ -29,6 +30,10 @@ type ProfissionaisPageProps = {
 export default async function ProfissionaisPage({
   searchParams,
 }: ProfissionaisPageProps) {
+  // A carteira completa é exclusiva da HORN: nome, telefone, e-mail, Instagram
+  // e endereço não são visíveis para loja nenhuma (spec, seção 4.2).
+  await requireAdminUser();
+
   const params = await searchParams;
 
   // Os filtros vivem na URL: a consulta e a paginação acontecem no banco.

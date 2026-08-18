@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 
+import { requireAdminUser } from "@/lib/auth/session";
+import { listStoreAccess } from "@/lib/stores/access";
 import { listStoreCategories, listStores } from "@/lib/stores/queries";
 import { parseStatusFilter, type StoreFilters } from "@/lib/stores/types";
+import { isAdminApiConfigured } from "@/lib/supabase/admin";
 
 import { StoresManager } from "./stores-manager";
 
@@ -16,6 +19,10 @@ type LojasPageProps = {
 };
 
 export default async function LojasPage({ searchParams }: LojasPageProps) {
+  // Cadastro, comissão, valor fixo e status são exclusivos da HORN — nem
+  // mesmo a própria loja edita o próprio registro (spec, seção 4.2).
+  await requireAdminUser();
+
   const params = await searchParams;
 
   // Os filtros vivem na URL, então a listagem é sempre consultada no servidor.
@@ -25,10 +32,19 @@ export default async function LojasPage({ searchParams }: LojasPageProps) {
     category: params.segmento?.trim() ?? "",
   };
 
-  const [{ stores, totalCount, error }, categories] = await Promise.all([
-    listStores(filters),
-    listStoreCategories(),
-  ]);
+  const [{ stores, totalCount, error }, categories, accessByStore] =
+    await Promise.all([
+      listStores(filters),
+      listStoreCategories(),
+      listStoreAccess(),
+    ]);
+
+  // Só os acessos das lojas realmente listadas atravessam para o cliente: o
+  // painel só abre a partir de uma linha da lista, e o e-mail de login de uma
+  // loja fora do filtro não tem por que viajar junto.
+  const visibleAccess = Object.fromEntries(
+    stores.map((store) => [store.id, accessByStore.get(store.id) ?? []]),
+  );
 
   return (
     <StoresManager
@@ -37,6 +53,10 @@ export default async function LojasPage({ searchParams }: LojasPageProps) {
       filters={filters}
       totalCount={totalCount}
       loadError={error}
+      accessByStore={visibleAccess}
+      // Sem a credencial administrativa dá para consultar e ativar/desativar,
+      // mas não criar conta nem gerar link.
+      canProvisionAccess={isAdminApiConfigured()}
     />
   );
 }

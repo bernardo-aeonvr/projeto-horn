@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { requireAdminUser } from "@/lib/auth/session";
 import {
   listActiveStores,
   listAllStores,
@@ -30,6 +31,10 @@ type ContatosPageProps = {
 };
 
 export default async function ContatosPage({ searchParams }: ContatosPageProps) {
+  // Um contato guarda quais lojas foram apresentadas juntas. Abrir esta tela
+  // para uma loja revelaria as outras marcas representadas (spec, seção 4.2).
+  await requireAdminUser();
+
   const params = await searchParams;
 
   const filters: ContactFilters = {

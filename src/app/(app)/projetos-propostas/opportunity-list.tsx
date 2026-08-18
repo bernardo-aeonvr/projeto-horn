@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "./status-badge";
 
 type OpportunityListProps = {
+  /** `false` para usuário de loja: a listagem não oferece edição. */
+  canManage: boolean;
   opportunities: Opportunity[];
   onOpenDetails: (opportunity: Opportunity) => void;
   onEdit: (opportunity: Opportunity) => void;
@@ -31,6 +33,7 @@ function closedValue(opportunity: Opportunity): string {
 }
 
 export function OpportunityList({
+  canManage,
   opportunities,
   onOpenDetails,
   onEdit,
@@ -57,9 +60,11 @@ export function OpportunityList({
                 Comissão
               </Th>
               <Th>Atualizado</Th>
-              <Th align="right">
-                <span className="sr-only">Ações</span>
-              </Th>
+              {canManage ? (
+                <Th align="right">
+                  <span className="sr-only">Ações</span>
+                </Th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -140,22 +145,24 @@ export function OpportunityList({
                   {formatContactedDate(opportunity.updated_at)}
                 </td>
 
-                <td className="px-2 py-2.5">
-                  <div className="flex items-center justify-end">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onEdit(opportunity);
-                      }}
-                      title="Editar"
-                      aria-label={`Editar ${opportunityTitle(opportunity)}`}
-                      className="flex size-9 items-center justify-center rounded-lg text-graphite-500 transition-colors hover:bg-graphite-100 hover:text-graphite-900"
-                    >
-                      <Pencil className="size-4" aria-hidden />
-                    </button>
-                  </div>
-                </td>
+                {canManage ? (
+                  <td className="px-2 py-2.5">
+                    <div className="flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEdit(opportunity);
+                        }}
+                        title="Editar"
+                        aria-label={`Editar ${opportunityTitle(opportunity)}`}
+                        className="flex size-9 items-center justify-center rounded-lg text-graphite-500 transition-colors hover:bg-graphite-100 hover:text-graphite-900"
+                      >
+                        <Pencil className="size-4" aria-hidden />
+                      </button>
+                    </div>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>

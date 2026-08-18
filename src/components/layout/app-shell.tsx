@@ -14,8 +14,14 @@ import { cn } from "@/lib/utils";
 const SIDEBAR_COOKIE = "horn-sidebar";
 const ONE_YEAR_IN_SECONDS = 60 * 60 * 24 * 365;
 
+export type AppShellUser = UserMenuProfile & {
+  role: AppRole;
+  /** Loja autenticada, quando o perfil é de loja. */
+  storeName: string | null;
+};
+
 type AppShellProps = {
-  user: UserMenuProfile & { role: AppRole };
+  user: AppShellUser;
   defaultCollapsed: boolean;
   children: ReactNode;
 };

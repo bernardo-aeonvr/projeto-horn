@@ -3,7 +3,7 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
-import { getSessionUser } from "@/lib/auth/session";
+import { authorizeAdminAction } from "@/lib/auth/session";
 import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
@@ -50,10 +50,15 @@ function failure(
   };
 }
 
-/** Toda escrita exige sessão. A autorização por role é garantida pela RLS. */
+/**
+ * Só o admin cadastra e edita lojas.
+ *
+ * Inclui a própria loja do usuário: ela não altera comissão, valor fixo nem
+ * status (spec, seção 4.2). A RLS recusa de novo no banco.
+ */
 async function requireSession() {
-  const user = await getSessionUser();
-  return user ? null : "Sua sessão expirou. Entre novamente para continuar.";
+  const authorization = await authorizeAdminAction();
+  return authorization.ok ? null : authorization.message;
 }
 
 export async function createStoreAction(

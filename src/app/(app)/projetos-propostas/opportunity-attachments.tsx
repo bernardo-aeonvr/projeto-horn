@@ -20,6 +20,11 @@ import { createClient } from "@/lib/supabase/client";
 const BUCKET = "proposal-pdfs";
 
 type OpportunityAttachmentsProps = {
+  /**
+   * `false` para usuário de loja: ela abre e baixa os PDFs das próprias
+   * propostas, mas não anexa nem remove nada (spec, seção 4.2).
+   */
+  canManage: boolean;
   opportunity: Opportunity;
   attachments: ProposalAttachment[] | null;
   onChanged: () => void;
@@ -47,6 +52,7 @@ function formatBytes(bytes: number | null): string {
  * porque é assim que a revisão de uma proposta fica registrada (spec, 13.2).
  */
 export function OpportunityAttachments({
+  canManage,
   opportunity,
   attachments,
   onChanged,
@@ -154,32 +160,36 @@ export function OpportunityAttachments({
           ) : null}
         </h3>
 
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploading}
-          className="inline-flex shrink-0 items-center gap-1 rounded text-xs font-medium text-gold-700 transition-colors hover:text-gold-800 disabled:opacity-60"
-        >
-          {uploading ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden />
-          ) : (
-            <Paperclip className="size-3.5" aria-hidden />
-          )}
-          {uploading ? "Enviando..." : "Anexar PDF"}
-        </button>
+        {canManage ? (
+          <>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex shrink-0 items-center gap-1 rounded text-xs font-medium text-gold-700 transition-colors hover:text-gold-800 disabled:opacity-60"
+            >
+              {uploading ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Paperclip className="size-3.5" aria-hidden />
+              )}
+              {uploading ? "Enviando..." : "Anexar PDF"}
+            </button>
 
-        <input
-          ref={inputRef}
-          type="file"
-          accept="application/pdf,.pdf"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            // Zera o input para permitir reenviar o mesmo arquivo depois.
-            event.target.value = "";
-            if (file) void handleUpload(file);
-          }}
-        />
+            <input
+              ref={inputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                // Zera o input para permitir reenviar o mesmo arquivo depois.
+                event.target.value = "";
+                if (file) void handleUpload(file);
+              }}
+            />
+          </>
+        ) : null}
       </div>
 
       {attachments === null ? (
@@ -189,8 +199,9 @@ export function OpportunityAttachments({
         </p>
       ) : attachments.length === 0 ? (
         <p className="py-4 text-sm leading-relaxed text-graphite-500">
-          Nenhum PDF anexado. Guarde aqui a proposta que a loja devolveu —
-          apenas o PDF, não o projeto completo.
+          {canManage
+            ? "Nenhum PDF anexado. Guarde aqui a proposta que a loja devolveu — apenas o PDF, não o projeto completo."
+            : "Nenhum PDF desta proposta foi disponibilizado pela HORN ainda."}
         </p>
       ) : (
         <ul className="divide-y divide-graphite-100">
@@ -228,20 +239,22 @@ export function OpportunityAttachments({
                 />
               ) : null}
 
-              <button
-                type="button"
-                onClick={() => handleRemove(attachment)}
-                disabled={removingId === attachment.id}
-                title="Remover"
-                aria-label={`Remover ${attachment.file_name}`}
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-graphite-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-60"
-              >
-                {removingId === attachment.id ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                ) : (
-                  <Trash2 className="size-3.5" aria-hidden />
-                )}
-              </button>
+              {canManage ? (
+                <button
+                  type="button"
+                  onClick={() => handleRemove(attachment)}
+                  disabled={removingId === attachment.id}
+                  title="Remover"
+                  aria-label={`Remover ${attachment.file_name}`}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-graphite-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-60"
+                >
+                  {removingId === attachment.id ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <Trash2 className="size-3.5" aria-hidden />
+                  )}
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

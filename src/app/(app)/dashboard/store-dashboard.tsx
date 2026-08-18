@@ -39,12 +39,30 @@ export function StoreDashboard({
   const { metrics } = data;
 
   const filters = (
-    <DashboardFilters
-      period={period}
-      from={from}
-      to={to}
-      rangeLabel={range.label}
-    />
+    <>
+      {/*
+        A loja não escolhe qual loja vê: o recorte vem do usuário autenticado.
+        Este cabeçalho existe para deixar isso explícito também no celular,
+        onde a identificação do topo não cabe.
+      */}
+      {data.storeName ? (
+        <div className="mb-4 sm:hidden">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-700">
+            Ambiente da loja
+          </p>
+          <p className="text-base font-semibold text-graphite-900">
+            {data.storeName}
+          </p>
+        </div>
+      ) : null}
+
+      <DashboardFilters
+        period={period}
+        from={from}
+        to={to}
+        rangeLabel={range.label}
+      />
+    </>
   );
 
   if (data.error) {
@@ -65,11 +83,16 @@ export function StoreDashboard({
       {filters}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {/*
+          Alcance é o total da HORN no período, não o recorte desta loja — o
+          texto de apoio precisa dizer isso, senão o número vira uma promessa
+          que os dados não sustentam.
+        */}
         <KpiCard
           emphasis
-          label="Profissionais alcançados"
+          label="Profissionais contatados"
           value={integer(metrics.professionals_contacted)}
-          hint="pessoas distintas a quem sua marca foi apresentada"
+          hint="pessoas distintas contatadas pela HORN no período"
         />
         <KpiCard
           label="Projetos recebidos"
@@ -119,7 +142,7 @@ export function StoreDashboard({
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Section
           title="Segmentos alcançados"
-          description="Profissionais distintos que receberam sua marca, por área de atuação."
+          description="Profissionais contatados pela HORN no período, por área de atuação."
         >
           <BarList
             items={data.segments.map((slice) => ({
@@ -132,7 +155,7 @@ export function StoreDashboard({
 
         <Section
           title="Regiões alcançadas"
-          description="Cobertura geográfica dos profissionais alcançados."
+          description="Cobertura geográfica dos profissionais contatados pela HORN."
         >
           <BarList
             items={data.regions.map((slice) => ({
@@ -146,8 +169,8 @@ export function StoreDashboard({
       </div>
 
       <Section
-        title="Profissionais alcançados"
-        description="Detalhamento do trabalho realizado no período."
+        title="Profissionais contatados"
+        description="Detalhamento do trabalho que a HORN realizou no período."
       >
         <ReachedProfessionals reached={data.reached} />
       </Section>

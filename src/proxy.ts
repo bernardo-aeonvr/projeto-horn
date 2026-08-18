@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import {
   DEFAULT_AUTHENTICATED_ROUTE,
+  isAdminOnlyRoute,
   isAuthOnlyRoute,
   isPublicRoute,
   LOGIN_ROUTE,
@@ -10,10 +11,11 @@ import {
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 /**
- * Renova a sessão do Supabase a cada requisição e faz o gate otimista de rotas.
+ * Renova a sessão do Supabase a cada requisição e faz o gate de rotas.
  *
- * A autorização de verdade continua sendo feita no servidor (layouts, actions)
- * e no banco via RLS — aqui é apenas o redirecionamento de navegação.
+ * A autorização de verdade continua sendo feita no servidor (páginas, actions)
+ * e no banco via RLS — aqui é o corte de navegação, que evita carregar uma
+ * tela administrativa para quem não pode vê-la.
  */
 export async function proxy(request: NextRequest) {
   const { url, publishableKey } = getSupabaseEnv();
@@ -60,6 +62,29 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(
       new URL(DEFAULT_AUTHENTICATED_ROUTE, request.url),
     );
+  }
+
+  /*
+    Área administrativa: quem não é admin volta para o próprio dashboard.
+
+    A consulta ao perfil só acontece nestas rotas — a navegação do dia a dia
+    (dashboard, projetos) não paga por ela. A policy `user_profiles_read`
+    permite ao usuário ler apenas a própria linha, então o papel lido aqui é
+    sempre o dele.
+  */
+  if (user && isAdminOnlyRoute(pathname)) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("role, is_active")
+      .eq("id", user.id)
+      .maybeSingle<{ role: string | null; is_active: boolean | null }>();
+
+    // Nega por padrão: erro de leitura ou perfil ausente também barram.
+    if (!profile || profile.role !== "admin" || !profile.is_active) {
+      return NextResponse.redirect(
+        new URL(DEFAULT_AUTHENTICATED_ROUTE, request.url),
+      );
+    }
   }
 
   return response;

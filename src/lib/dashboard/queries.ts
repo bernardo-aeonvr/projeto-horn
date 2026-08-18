@@ -246,10 +246,14 @@ type BreakdownRow = {
 /**
  * Carrega o Dashboard da Loja.
  *
- * Roda inteiro sobre funções SECURITY DEFINER travadas em
- * `current_store_id()`: mesmo que a requisição seja adulterada, não existe
- * parâmetro de loja para trocar. `get_store_reach_breakdown` recebe o id, mas
- * rejeita qualquer loja que não seja a do próprio usuário.
+ * Roda inteiro sobre funções SECURITY DEFINER que derivam tudo da sessão: não
+ * existe parâmetro de loja para trocar em nenhuma delas.
+ *
+ * Duas semânticas convivem aqui, por decisão de negócio (migration 0005):
+ *   - alcance (profissionais contatados, segmentos, regiões, lista) = o
+ *     trabalho da HORN inteiro no período, inclusive contatos em que esta loja
+ *     não foi marcada;
+ *   - comercial (projetos, propostas, valores, comissão) = só desta loja.
  */
 export async function loadStoreDashboard(
   range: PeriodRange,
@@ -267,13 +271,10 @@ export async function loadStoreDashboard(
       p_from: range.from,
       p_to: range.to,
     }),
-    storeId
-      ? supabase.rpc("get_store_reach_breakdown", {
-          p_store_id: storeId,
-          p_from: range.from,
-          p_to: range.to,
-        })
-      : Promise.resolve({ data: [], error: null }),
+    supabase.rpc("get_horn_reach_breakdown", {
+      p_from: range.from,
+      p_to: range.to,
+    }),
   ]);
 
   const failure =

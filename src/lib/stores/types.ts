@@ -84,3 +84,33 @@ export const initialStoreFormState: StoreFormState = {
   values: null,
   attemptedAt: null,
 };
+
+// --------------------------------------------------------------------------
+// Acesso da loja
+// --------------------------------------------------------------------------
+// Vivem aqui, e não junto das actions, porque um módulo "use server" só pode
+// exportar funções assíncronas — um objeto exportado de lá quebra o RSC.
+
+export type StoreAccessFormState = {
+  status: "idle" | "success" | "error";
+  message: string | null;
+  fieldErrors: Record<string, string>;
+  /** Link de definição de senha. Só existe após uma operação bem-sucedida. */
+  setupLink: string | null;
+  succeededAt: number | null;
+};
+
+export const initialStoreAccessFormState: StoreAccessFormState = {
+  status: "idle",
+  message: null,
+  fieldErrors: {},
+  setupLink: null,
+  succeededAt: null,
+};
+
+export type StoreAccessResult = {
+  ok: boolean;
+  message: string;
+  /** Link de definição de senha, quando a ação gerou um. */
+  link?: string;
+};

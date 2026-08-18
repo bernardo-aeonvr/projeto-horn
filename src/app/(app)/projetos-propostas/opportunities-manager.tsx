@@ -32,6 +32,12 @@ import { OpportunityList } from "./opportunity-list";
 import { StatusDialog, type StatusIntent } from "./status-dialog";
 
 type OpportunitiesManagerProps = {
+  /**
+   * Admin registra e movimenta; loja apenas consulta (spec, seção 4.2).
+   * Aqui isso é UX: quem barra a escrita de verdade são as Server Actions e a
+   * RLS. Esconder o botão evita oferecer uma ação que seria recusada.
+   */
+  canManage: boolean;
   opportunities: Opportunity[];
   professionals: ProfessionalOption[];
   /** Lojas ativas, oferecidas no formulário. */
@@ -56,6 +62,7 @@ type Panel =
 type DialogState = null | { opportunity: Opportunity; intent: StatusIntent };
 
 export function OpportunitiesManager({
+  canManage,
   opportunities,
   professionals,
   activeStores,
@@ -198,6 +205,7 @@ export function OpportunitiesManager({
     <>
       {hasAnyOpportunity ? (
         <OpportunitiesToolbar
+          canManage={canManage}
           filters={filters}
           stores={allStores}
           professionalName={professionalName}
@@ -210,11 +218,17 @@ export function OpportunitiesManager({
         <EmptyState
           icon={FolderKanban}
           title="Nenhum projeto registrado"
-          description="Quando um profissional solicitar um projeto ou orçamento, registre a oportunidade aqui. Cada projeto liga um profissional a uma única loja."
+          description={
+            canManage
+              ? "Quando um profissional solicitar um projeto ou orçamento, registre a oportunidade aqui. Cada projeto liga um profissional a uma única loja."
+              : "Assim que a HORN encaminhar uma demanda para a sua loja, ela aparece aqui com o profissional, o status e os valores."
+          }
           action={
-            <Button onClick={() => setPanel({ mode: "new" })}>
-              Novo projeto
-            </Button>
+            canManage ? (
+              <Button onClick={() => setPanel({ mode: "new" })}>
+                Novo projeto
+              </Button>
+            ) : undefined
           }
         />
       ) : opportunities.length === 0 ? (
@@ -232,6 +246,7 @@ export function OpportunitiesManager({
       ) : (
         <>
           <OpportunityList
+            canManage={canManage}
             opportunities={opportunities}
             onOpenDetails={(opportunity) =>
               setPanel({ mode: "details", opportunity })
@@ -258,6 +273,7 @@ export function OpportunitiesManager({
       >
         {panel?.mode === "details" ? (
           <OpportunityDetails
+            canManage={canManage}
             opportunity={panel.opportunity}
             details={details}
             pendingStatus={pendingStatus}

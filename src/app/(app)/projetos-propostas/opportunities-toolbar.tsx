@@ -18,7 +18,10 @@ import { cn } from "@/lib/utils";
 const SEARCH_DEBOUNCE_MS = 300;
 
 type OpportunitiesToolbarProps = {
+  /** `false` para usuário de loja: some o botão de novo projeto. */
+  canManage: boolean;
   filters: OpportunityFilters;
+  /** Vazio para usuário de loja — não há outra loja para escolher. */
   stores: OpportunityStore[];
   /** Nome do profissional filtrado, quando a tela foi aberta pela ficha dele. */
   professionalName: string | null;
@@ -27,6 +30,7 @@ type OpportunitiesToolbarProps = {
 };
 
 export function OpportunitiesToolbar({
+  canManage,
   filters,
   stores,
   professionalName,
@@ -98,16 +102,26 @@ export function OpportunitiesToolbar({
             type="search"
             value={term}
             onChange={(event) => setTerm(event.target.value)}
-            placeholder="Buscar por profissional, loja ou demanda"
-            aria-label="Buscar por profissional, loja ou demanda"
+            placeholder={
+              canManage
+                ? "Buscar por profissional, loja ou demanda"
+                : "Buscar por profissional ou demanda"
+            }
+            aria-label={
+              canManage
+                ? "Buscar por profissional, loja ou demanda"
+                : "Buscar por profissional ou demanda"
+            }
             className={cn(inputBaseClass, "pl-10")}
           />
         </div>
 
-        <Button onClick={onNewOpportunity} className="sm:ml-auto">
-          <Plus className="size-4" aria-hidden />
-          Novo projeto
-        </Button>
+        {canManage ? (
+          <Button onClick={onNewOpportunity} className="sm:ml-auto">
+            <Plus className="size-4" aria-hidden />
+            Novo projeto
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

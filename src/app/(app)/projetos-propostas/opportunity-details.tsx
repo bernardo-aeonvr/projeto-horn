@@ -9,6 +9,7 @@ import {
   NEXT_STATUSES,
   STATUS_ACTION_LABELS,
   STATUS_LABELS,
+  STATUS_MEANINGS,
   statusNeedsDetails,
   type Opportunity,
   type OpportunityDetails as OpportunityDetailsData,
@@ -21,6 +22,8 @@ import { OpportunityAttachments } from "./opportunity-attachments";
 import { StatusBadge } from "./status-badge";
 
 type OpportunityDetailsProps = {
+  /** `false` para usuário de loja: a ficha vira somente leitura. */
+  canManage: boolean;
   opportunity: Opportunity;
   /** Histórico e anexos, carregados sob demanda. */
   details: OpportunityDetailsData | null;
@@ -35,6 +38,7 @@ type OpportunityDetailsProps = {
 };
 
 export function OpportunityDetails({
+  canManage,
   opportunity,
   details,
   onEdit,
@@ -60,13 +64,23 @@ export function OpportunityDetails({
           ) : null}
         </div>
 
-        {/* Próximo passo do funil */}
+        {/* Próximo passo do funil — quem movimenta é sempre a HORN */}
         <section className="mt-5 rounded-xl border border-graphite-200 bg-graphite-50/60 px-4 py-4">
           <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-graphite-500">
-            {isFinished ? "Negócio encerrado" : "Registrar movimentação"}
+            {!canManage
+              ? "Situação atual"
+              : isFinished
+                ? "Negócio encerrado"
+                : "Registrar movimentação"}
           </h3>
 
-          {isFinished ? (
+          {!canManage ? (
+            <p className="mt-2 text-sm leading-relaxed text-graphite-600">
+              {STATUS_MEANINGS[opportunity.status]} O acompanhamento é feito
+              pela HORN — fale com a equipe para atualizar qualquer informação
+              deste projeto.
+            </p>
+          ) : isFinished ? (
             <p className="mt-2 text-sm leading-relaxed text-graphite-600">
               {opportunity.status === "closed"
                 ? "O negócio está marcado como fechado. Se isso foi um engano, corrija o status — a correção também entra no histórico."
@@ -194,6 +208,7 @@ export function OpportunityDetails({
           ) : null}
 
           <OpportunityAttachments
+            canManage={canManage}
             opportunity={opportunity}
             attachments={details?.attachments ?? null}
             onChanged={onDetailsChanged}
@@ -214,17 +229,23 @@ export function OpportunityDetails({
         </div>
       </div>
 
-      <footer className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-graphite-200/70 bg-white px-5 py-4 sm:px-6">
-        <Button variant="secondary" onClick={onCorrectStatus} className="mr-auto">
-          <Settings2 className="size-4" aria-hidden />
-          Corrigir status
-        </Button>
+      {canManage ? (
+        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-graphite-200/70 bg-white px-5 py-4 sm:px-6">
+          <Button
+            variant="secondary"
+            onClick={onCorrectStatus}
+            className="mr-auto"
+          >
+            <Settings2 className="size-4" aria-hidden />
+            Corrigir status
+          </Button>
 
-        <Button onClick={onEdit}>
-          <Pencil className="size-4" aria-hidden />
-          Editar
-        </Button>
-      </footer>
+          <Button onClick={onEdit}>
+            <Pencil className="size-4" aria-hidden />
+            Editar
+          </Button>
+        </footer>
+      ) : null}
     </div>
   );
 }

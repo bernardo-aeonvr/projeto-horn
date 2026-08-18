@@ -3,7 +3,7 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
-import { getSessionUser } from "@/lib/auth/session";
+import { authorizeAdminAction, getSessionUser } from "@/lib/auth/session";
 import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
@@ -100,6 +100,19 @@ function statusFailure(
   };
 }
 
+/**
+ * Toda escrita de projeto é privativa do admin.
+ *
+ * A loja é somente leitura (spec, seção 4.2), e esconder o botão não basta:
+ * uma Server Action é um endpoint. Esta checagem roda antes de qualquer
+ * gravação, e a RLS recusa de novo no banco caso algo escape daqui.
+ */
+async function requireAdmin() {
+  const authorization = await authorizeAdminAction();
+  return authorization.ok ? null : authorization.message;
+}
+
+/** Leituras sob demanda: basta uma sessão válida, o recorte é feito pela RLS. */
 async function requireSession() {
   const user = await getSessionUser();
   return user ? null : "Sua sessão expirou. Entre novamente para continuar.";
@@ -133,7 +146,7 @@ export async function createOpportunityAction(
   _prevState: OpportunityFormState,
   formData: FormData,
 ): Promise<OpportunityFormState> {
-  const sessionError = await requireSession();
+  const sessionError = await requireAdmin();
   if (sessionError) return formFailure(sessionError);
 
   const parsed = parseOpportunityForm(formData);
@@ -186,7 +199,7 @@ export async function updateOpportunityAction(
   _prevState: OpportunityFormState,
   formData: FormData,
 ): Promise<OpportunityFormState> {
-  const sessionError = await requireSession();
+  const sessionError = await requireAdmin();
   if (sessionError) return formFailure(sessionError);
 
   const id = formData.get("id");
@@ -309,7 +322,7 @@ export async function changeOpportunityStatusAction(
   _prevState: StatusFormState,
   formData: FormData,
 ): Promise<StatusFormState> {
-  const sessionError = await requireSession();
+  const sessionError = await requireAdmin();
   if (sessionError) return statusFailure(sessionError);
 
   const parsed = parseStatusChangeForm(formData);
@@ -345,7 +358,7 @@ export async function moveOpportunityStatusAction(
   id: string,
   status: OpportunityStatus,
 ): Promise<ActionResult> {
-  const sessionError = await requireSession();
+  const sessionError = await requireAdmin();
   if (sessionError) return { ok: false, message: sessionError };
 
   return applyStatusChange({ id, status });
@@ -391,12 +404,12 @@ export async function getOpportunityAction(
   return getOpportunity(id);
 }
 
-/** Projetos de um profissional, exibidos na ficha dele. */
+/** Projetos de um profissional, exibidos na ficha dele — tela só do admin. */
 export async function getProfessionalOpportunitiesAction(
   professionalId: string,
 ): Promise<Opportunity[]> {
-  const user = await getSessionUser();
-  if (!user) return [];
+  const authorization = await authorizeAdminAction();
+  if (!authorization.ok) return [];
 
   return listOpportunitiesByProfessional(professionalId);
 }
@@ -426,7 +439,7 @@ export type RegisterAttachmentInput = {
 export async function registerProposalAttachmentAction(
   input: RegisterAttachmentInput,
 ): Promise<ActionResult> {
-  const sessionError = await requireSession();
+  const sessionError = await requireAdmin();
   if (sessionError) return { ok: false, message: sessionError };
 
   const parsed = parseAttachmentInput(input);
@@ -542,7 +555,7 @@ export async function createAttachmentUrlAction(
 export async function removeProposalAttachmentAction(
   attachmentId: string,
 ): Promise<ActionResult> {
-  const sessionError = await requireSession();
+  const sessionError = await requireAdmin();
   if (sessionError) return { ok: false, message: sessionError };
 
   const supabase = await createClient();

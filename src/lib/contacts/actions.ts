@@ -3,7 +3,7 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
-import { getSessionUser } from "@/lib/auth/session";
+import { authorizeAdminAction } from "@/lib/auth/session";
 import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
@@ -56,9 +56,16 @@ function failure(
   };
 }
 
+/**
+ * Registrar e consultar contatos é privativo do admin.
+ *
+ * Um contato guarda quais lojas foram apresentadas juntas — abrir isso para
+ * uma loja revelaria as outras marcas representadas (spec, seção 4.2). A RLS
+ * recusa de novo no banco.
+ */
 async function requireSession() {
-  const user = await getSessionUser();
-  return user ? null : "Sua sessão expirou. Entre novamente para continuar.";
+  const authorization = await authorizeAdminAction();
+  return authorization.ok ? null : authorization.message;
 }
 
 function revalidate() {
@@ -303,8 +310,8 @@ export async function deleteContactAction(
 export async function getProfessionalContactsAction(
   professionalId: string,
 ): Promise<Contact[]> {
-  const user = await getSessionUser();
-  if (!user) return [];
+  const authorization = await authorizeAdminAction();
+  if (!authorization.ok) return [];
 
   return listContactsByProfessional(professionalId);
 }

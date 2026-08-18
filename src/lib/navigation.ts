@@ -7,6 +7,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { isAdminOnlyRoute } from "@/lib/auth/routes";
 import type { AppRole } from "@/lib/auth/session";
 
 export type NavItem = {
@@ -15,7 +16,8 @@ export type NavItem = {
   /** Frase curta exibida abaixo do título no cabeçalho. */
   description: string;
   icon: LucideIcon;
-  roles: AppRole[];
+  /** Texto alternativo quando quem vê é uma loja. */
+  storeDescription?: string;
 };
 
 /**
@@ -28,14 +30,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Dashboard",
     description: "Visão consolidada da carteira e dos resultados",
     icon: LayoutDashboard,
-    roles: ["admin", "store"],
+    storeDescription: "Resultados do trabalho da HORN para a sua loja",
   },
   {
     href: "/profissionais",
     label: "Profissionais",
     description: "Gerencie a carteira de profissionais da HORN",
     icon: Users,
-    roles: ["admin"],
   },
   {
     href: "/contatos",
@@ -43,26 +44,32 @@ export const NAV_ITEMS: NavItem[] = [
     description:
       "Registre e acompanhe os contatos realizados com os profissionais",
     icon: PhoneCall,
-    roles: ["admin"],
   },
   {
     href: "/projetos-propostas",
     label: "Projetos & Propostas",
     description: "Acompanhe as demandas e propostas comerciais da HORN",
     icon: FolderKanban,
-    roles: ["admin", "store"],
+    storeDescription: "Os projetos e propostas encaminhados à sua loja",
   },
   {
     href: "/lojas",
     label: "Lojas",
     description: "Gerencie as empresas representadas pela HORN",
     icon: Store,
-    roles: ["admin"],
   },
 ];
 
+/**
+ * Menu do perfil.
+ *
+ * A divisão sai de `isAdminOnlyRoute`, a mesma lista que o proxy e as páginas
+ * usam para autorizar — o menu não pode discordar da proteção de rota.
+ */
 export function getNavItems(role: AppRole): NavItem[] {
-  return NAV_ITEMS.filter((item) => item.roles.includes(role));
+  if (role === "admin") return NAV_ITEMS;
+
+  return NAV_ITEMS.filter((item) => !isAdminOnlyRoute(item.href));
 }
 
 /** Encontra o item de navegação correspondente à rota atual. */

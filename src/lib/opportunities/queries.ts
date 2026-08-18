@@ -252,6 +252,158 @@ async function countAll(): Promise<number> {
   return count ?? 0;
 }
 
+type StoreOpportunityRow = {
+  id: string;
+  professional_id: string;
+  professional_name: string;
+  segment_name: string | null;
+  store_id: string;
+  store_name: string;
+  store_is_active: boolean;
+  title: string | null;
+  status: Opportunity["status"];
+  proposal_initial_value: number | string | null;
+  final_closed_value: number | string | null;
+  commission_percent: number | string | null;
+  commission_value: number | string | null;
+  loss_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  filtered_count: number | string;
+  total_count: number | string;
+};
+
+/**
+ * Listagem de projetos vista pelo usuário de loja.
+ *
+ * Caminho separado por necessidade, não por escolha: a listagem do admin
+ * embute `professionals!inner`, e `professionals` é admin-only por RLS — o
+ * join interno derrubaria todas as linhas e a loja veria a tela vazia.
+ *
+ * `get_store_opportunities_page` resolve a loja pelo perfil do usuário
+ * autenticado; não existe parâmetro de loja para adulterar. Ela também não
+ * devolve as observações internas da HORN.
+ */
+export async function listStoreOpportunities(
+  filters: OpportunityFilters,
+): Promise<OpportunityListResult> {
+  const supabase = await createClient();
+
+  const { from, to } = resolvePeriod(
+    filters.period as PeriodPreset,
+    filters.from,
+    filters.to,
+  );
+
+  const { data, error } = await supabase.rpc("get_store_opportunities_page", {
+    p_q: filters.q.trim() || null,
+    p_status: filters.status || null,
+    p_professional_id: filters.professionalId || null,
+    p_from: from || null,
+    p_to: to || null,
+    p_limit: PAGE_SIZE,
+    p_offset: (filters.page - 1) * PAGE_SIZE,
+  });
+
+  if (error) {
+    console.error("[projetos] falha ao listar projetos da loja", error);
+    return {
+      opportunities: [],
+      filteredCount: 0,
+      totalCount: 0,
+      page: filters.page,
+      pageCount: 1,
+      error:
+        "Não foi possível carregar os projetos. Verifique a conexão e tente novamente.",
+    };
+  }
+
+  const rows = (data as StoreOpportunityRow[] | null) ?? [];
+
+  // As contagens viajam repetidas em cada linha. Sem nenhuma linha nesta página
+  // elas não vêm, e o total precisa de uma segunda chamada — é ele que separa
+  // "a loja não tem projetos" de "o filtro não encontrou nada".
+  const filteredCount =
+    rows.length > 0 ? (toNumber(rows[0].filtered_count) ?? 0) : 0;
+  const totalCount =
+    rows.length > 0
+      ? (toNumber(rows[0].total_count) ?? 0)
+      : await countStoreOpportunities();
+
+  return {
+    opportunities: rows.map(
+      (row): Opportunity => ({
+        id: row.id,
+        professional_id: row.professional_id,
+        store_id: row.store_id,
+        title: row.title,
+        // As observações internas da HORN não são expostas à loja.
+        notes: null,
+        status: row.status,
+        proposal_initial_value: toNumber(row.proposal_initial_value),
+        final_closed_value: toNumber(row.final_closed_value),
+        commission_percent: toNumber(row.commission_percent),
+        commission_value: toNumber(row.commission_value),
+        loss_reason: row.loss_reason,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        professional: {
+          id: row.professional_id,
+          name: row.professional_name,
+          segment_name: row.segment_name,
+        },
+        store: {
+          id: row.store_id,
+          name: row.store_name,
+          is_active: row.store_is_active,
+          // Só interessa ao formulário de projeto, que a loja não abre.
+          default_commission_percent: null,
+        },
+      }),
+    ),
+    filteredCount,
+    totalCount: Math.max(totalCount, filteredCount),
+    page: filters.page,
+    pageCount: Math.max(1, Math.ceil(filteredCount / PAGE_SIZE)),
+    error: null,
+  };
+}
+
+/** Total de projetos da própria loja, sem nenhum filtro. */
+async function countStoreOpportunities(): Promise<number> {
+  const supabase = await createClient();
+
+  // A policy `opportunities_read` já restringe a contagem à própria loja.
+  const { count } = await supabase
+    .from("opportunities")
+    .select("id", { count: "exact", head: true });
+
+  return count ?? 0;
+}
+
+/**
+ * Profissionais que a loja pode citar: só os que já geraram projeto para ela.
+ * Resolve o nome no chip de filtro sem abrir a carteira da HORN.
+ */
+export async function listStoreProfessionalOptions(): Promise<
+  { id: string; name: string }[]
+> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc(
+    "get_store_opportunity_professionals",
+  );
+
+  if (error || !data) {
+    console.error("[projetos] falha ao carregar profissionais da loja", error);
+    return [];
+  }
+
+  return (data as { professional_id: string; professional_name: string }[]).map(
+    (row) => ({ id: row.professional_id, name: row.professional_name }),
+  );
+}
+
 /** Uma oportunidade com profissional e loja resolvidos. */
 export async function getOpportunity(id: string): Promise<Opportunity | null> {
   const supabase = await createClient();

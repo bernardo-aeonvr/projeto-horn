@@ -3,7 +3,7 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
-import { getSessionUser } from "@/lib/auth/session";
+import { authorizeAdminAction } from "@/lib/auth/session";
 import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
@@ -53,9 +53,16 @@ function failure(
   };
 }
 
+/**
+ * A carteira de profissionais é exclusiva da HORN.
+ *
+ * A tela já é bloqueada para loja, mas uma Server Action é um endpoint: sem
+ * esta checagem, uma chamada direta contornaria a interface. A RLS recusa de
+ * novo no banco.
+ */
 async function requireSession() {
-  const user = await getSessionUser();
-  return user ? null : "Sua sessão expirou. Entre novamente para continuar.";
+  const authorization = await authorizeAdminAction();
+  return authorization.ok ? null : authorization.message;
 }
 
 /**

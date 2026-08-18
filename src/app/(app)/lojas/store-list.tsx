@@ -1,20 +1,57 @@
 "use client";
 
-import { FolderKanban, Loader2, Pencil, Power, PowerOff } from "lucide-react";
+import {
+  FolderKanban,
+  KeyRound,
+  Loader2,
+  Pencil,
+  Power,
+  PowerOff,
+} from "lucide-react";
 import Link from "next/link";
 import { useTransition } from "react";
 
+import type { StoreAccess } from "@/lib/stores/access";
 import { formatCurrency, formatPercent } from "@/lib/stores/format";
 import type { Store } from "@/lib/stores/types";
 import { cn } from "@/lib/utils";
 
 type StoreListProps = {
   stores: Store[];
+  /** Acessos provisionados, indexados pelo id da loja. */
+  accessByStore: Record<string, StoreAccess[]>;
   onEdit: (store: Store) => void;
+  onManageAccess: (store: Store) => void;
   onToggleActive: (store: Store) => void;
   /** Id da loja cujo status está sendo alterado. */
   pendingId: string | null;
 };
+
+/** Situação do acesso da loja, resumida em uma palavra. */
+function AccessSummary({ accesses }: { accesses: StoreAccess[] }) {
+  if (accesses.length === 0) {
+    return <span className="text-xs text-graphite-400">Sem acesso</span>;
+  }
+
+  const active = accesses.filter((access) => access.isActive);
+
+  if (active.length === 0) {
+    return <span className="text-xs text-graphite-500">Desativado</span>;
+  }
+
+  const pending = active.every((access) => access.lastSignInAt === null);
+
+  return (
+    <span className="text-xs text-graphite-600">
+      {active.length > 1 ? `${active.length} acessos` : active[0].email}
+      {pending ? (
+        <span className="mt-0.5 block text-graphite-400">
+          aguardando 1º acesso
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 export function StoreStatusBadge({ active }: { active: boolean }) {
   return (
@@ -41,12 +78,14 @@ export function StoreStatusBadge({ active }: { active: boolean }) {
 function RowActions({
   store,
   onEdit,
+  onManageAccess,
   onToggleActive,
   pending,
   variant,
 }: {
   store: Store;
   onEdit: (store: Store) => void;
+  onManageAccess: (store: Store) => void;
   onToggleActive: (store: Store) => void;
   pending: boolean;
   variant: "table" | "card";
@@ -61,18 +100,26 @@ function RowActions({
 
   if (variant === "card") {
     return (
-      <div className="flex gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={() => onEdit(store)}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50"
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50"
         >
           <Pencil className="size-3.5" aria-hidden />
           Editar
         </button>
+        <button
+          type="button"
+          onClick={() => onManageAccess(store)}
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50"
+        >
+          <KeyRound className="size-3.5" aria-hidden />
+          Acesso
+        </button>
         <Link
           href={projectsHref}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50"
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50"
         >
           <FolderKanban className="size-3.5" aria-hidden />
           Projetos
@@ -81,7 +128,7 @@ function RowActions({
           type="button"
           onClick={() => onToggleActive(store)}
           disabled={pending}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50 disabled:opacity-60"
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50 disabled:opacity-60"
         >
           {pending ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -104,6 +151,16 @@ function RowActions({
       >
         <FolderKanban className="size-4" aria-hidden />
       </Link>
+
+      <button
+        type="button"
+        onClick={() => onManageAccess(store)}
+        title="Acesso da loja"
+        aria-label={`Acesso da loja ${store.name}`}
+        className="flex size-9 items-center justify-center rounded-lg text-graphite-500 transition-colors hover:bg-graphite-100 hover:text-graphite-900"
+      >
+        <KeyRound className="size-4" aria-hidden />
+      </button>
 
       <button
         type="button"
@@ -135,7 +192,9 @@ function RowActions({
 
 export function StoreList({
   stores,
+  accessByStore,
   onEdit,
+  onManageAccess,
   onToggleActive,
   pendingId,
 }: StoreListProps) {
@@ -160,6 +219,7 @@ export function StoreList({
               <Th>Responsável</Th>
               <Th align="right">Valor mensal</Th>
               <Th align="right">Comissão</Th>
+              <Th>Acesso</Th>
               <Th>Status</Th>
               <Th align="right">
                 <span className="sr-only">Ações</span>
@@ -202,6 +262,9 @@ export function StoreList({
                 <td className="px-4 py-3.5 text-right tabular-nums text-graphite-700">
                   {formatPercent(store.default_commission_percent)}
                 </td>
+                <td className="max-w-[13rem] px-4 py-3.5">
+                  <AccessSummary accesses={accessByStore[store.id] ?? []} />
+                </td>
                 <td className="px-4 py-3.5">
                   <StoreStatusBadge active={store.is_active} />
                 </td>
@@ -209,6 +272,7 @@ export function StoreList({
                   <RowActions
                     store={store}
                     onEdit={onEdit}
+                    onManageAccess={onManageAccess}
                     onToggleActive={handleToggle}
                     pending={pendingId === store.id}
                     variant="table"
@@ -252,10 +316,18 @@ export function StoreList({
               />
             </dl>
 
+            <div className="mt-3 border-t border-graphite-100 pt-3">
+              <p className="text-xs text-graphite-500">Acesso da loja</p>
+              <div className="mt-0.5">
+                <AccessSummary accesses={accessByStore[store.id] ?? []} />
+              </div>
+            </div>
+
             <div className="mt-4">
               <RowActions
                 store={store}
                 onEdit={onEdit}
+                onManageAccess={onManageAccess}
                 onToggleActive={handleToggle}
                 pending={pendingId === store.id}
                 variant="card"

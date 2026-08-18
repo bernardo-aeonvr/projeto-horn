@@ -1,6 +1,6 @@
 import { TriangleAlert } from "lucide-react";
 
-import { BarList } from "@/components/dashboard/bar-list";
+import { DistributionChart } from "@/components/dashboard/distribution-chart";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { TrendChart } from "@/components/dashboard/trend-chart";
 import { ErrorState } from "@/components/ui/empty-state";
@@ -9,10 +9,7 @@ import {
   type DashboardPeriod,
   type PeriodRange,
 } from "@/lib/dashboard/period";
-import {
-  conversionRate,
-  type AdminDashboardData,
-} from "@/lib/dashboard/types";
+import type { AdminDashboardData } from "@/lib/dashboard/types";
 import { formatCurrency } from "@/lib/stores/format";
 
 import { DashboardFilters } from "./dashboard-filters";
@@ -39,7 +36,6 @@ export function AdminDashboard({
 }: AdminDashboardProps) {
   const { metrics, portfolio } = data;
   const selectedStore = data.stores.find((store) => store.id === storeId);
-  const conversion = conversionRate(metrics);
 
   const filters = (
     <DashboardFilters
@@ -81,10 +77,27 @@ export function AdminDashboard({
       ) : null}
 
       {/*
-        Bloco principal. São os seis números que respondem "o que aconteceu no
-        período" — todos eventos, nenhum estado de carteira.
+        Cinco números, um por etapa do funil, e nenhum derivável de outro.
+
+        A régua para entrar aqui é medir um conjunto de eventos que nenhum outro
+        card já mede. Foi o que tirou os seis que existiam antes:
+
+          contatos realizados  -> mesmo conjunto de "profissionais contatados",
+                                  contado por evento em vez de por pessoa
+          propostas recebidas  -> etapa do mesmo fluxo de "propostas enviadas"
+          negócios perdidos    -> complemento de "negócios fechados"
+          valor proposto       -> soma do conjunto de "propostas enviadas"
+          valor fechado        -> soma do conjunto de "negócios fechados", e é
+                                  dele que a comissão sai
+          conversão            -> construída a partir dos dois primeiros cards
+
+        O que saiu não desapareceu do produto: valor fechado e comissão por
+        loja continuam na tabela de resultado por loja, e o detalhe de cada
+        negócio está em Projetos & Propostas.
+
+        Todos são eventos do período; nenhum estado de carteira entra aqui.
       */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4 lg:grid-cols-3 xl:grid-cols-5">
         <KpiCard
           emphasis
           label="Profissionais contatados"
@@ -107,57 +120,10 @@ export function AdminDashboard({
           hint="aceites registrados"
         />
         <KpiCard
-          label="Valor fechado"
-          value={formatCurrency(metrics.total_closed_value)}
-          hint="soma dos negócios fechados"
-        />
-        <KpiCard
           emphasis
           label="Comissão gerada"
           value={formatCurrency(metrics.total_commission_value)}
-          hint="percentual preservado em cada negócio"
-        />
-      </div>
-
-      {/* Faixa de apoio: o mesmo período, em segundo plano. */}
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-5">
-        <KpiCard
-          size="sm"
-          label="Contatos realizados"
-          value={integer(metrics.contact_events)}
-          hint="eventos, incluindo recontatos"
-        />
-        <KpiCard
-          size="sm"
-          label="Propostas recebidas"
-          value={integer(metrics.proposals_received)}
-          hint="devolvidas pelas lojas"
-        />
-        <KpiCard
-          size="sm"
-          label="Negócios perdidos"
-          value={integer(metrics.proposals_lost)}
-          hint="encerrados sem venda"
-        />
-        <KpiCard
-          size="sm"
-          label="Valor proposto"
-          value={formatCurrency(metrics.total_proposed_value)}
-          hint="valor inicial das propostas enviadas"
-        />
-        <KpiCard
-          size="sm"
-          label="Conversão contato → projeto"
-          value={
-            conversion === null
-              ? "—"
-              : `${(conversion * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`
-          }
-          hint={
-            conversion === null
-              ? "sem contatos no período"
-              : `${integer(metrics.professionals_with_projects)} de ${integer(metrics.professionals_contacted)} contatados geraram projeto`
-          }
+          hint="receita da HORN nos negócios fechados"
         />
       </div>
 
@@ -178,11 +144,12 @@ export function AdminDashboard({
             title={`Segmentos alcançados por ${selectedStore.name}`}
             description="Profissionais distintos que receberam esta marca em um contato do período."
           >
-            <BarList
+            <DistributionChart
               items={data.reachSegments.map((slice) => ({
                 label: slice.label,
                 value: slice.active_count,
               }))}
+              shareOf="profissionais alcançados no período"
               emptyMessage="Esta loja ainda não foi apresentada a nenhum profissional neste período."
             />
           </Section>
@@ -191,11 +158,12 @@ export function AdminDashboard({
             title="Regiões alcançadas"
             description="Distribuição dos profissionais alcançados por região de atuação."
           >
-            <BarList
+            <DistributionChart
               items={data.reachRegions.map((slice) => ({
                 label: slice.label,
                 value: slice.active_count,
               }))}
+              shareOf="atuações por região dos alcançados"
               emptyMessage="Sem alcance registrado neste período."
               note="Um profissional pode atuar em mais de uma região, então a soma passa do total de alcançados."
             />
@@ -207,18 +175,22 @@ export function AdminDashboard({
             title="Carteira"
             description="Estado atual da base. Estes números descrevem o cadastro hoje e não mudam com o filtro de período."
           >
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4 lg:grid-cols-4">
               <KpiCard
                 size="sm"
                 label="Profissionais ativos"
                 value={integer(portfolio.professionals_active)}
                 hint={`${integer(portfolio.professionals_total)} cadastrados no total`}
               />
+              {/*
+                Lacuna do lado do profissional. Cadastrar não é contatar
+                (spec, seção 7.5): este é o trabalho que ainda não foi feito.
+              */}
               <KpiCard
                 size="sm"
-                label="Profissionais inativos"
-                value={integer(portfolio.professionals_inactive)}
-                hint="fora da carteira ativa"
+                label="Nunca contatados"
+                value={integer(portfolio.professionals_never_contacted)}
+                hint="ativos que ainda não receberam nenhum contato"
               />
               <KpiCard
                 size="sm"
@@ -226,11 +198,12 @@ export function AdminDashboard({
                 value={integer(portfolio.stores_active)}
                 hint={`${integer(portfolio.stores_total)} cadastradas no total`}
               />
+              {/* Lacuna do lado da loja: apresentada, mas sem demanda chegando. */}
               <KpiCard
                 size="sm"
-                label="Sem região definida"
-                value={integer(portfolio.professionals_without_region)}
-                hint="ativos que não entram no gráfico de regiões"
+                label="Lojas sem projeto"
+                value={integer(portfolio.stores_without_projects)}
+                hint="ativas que nunca receberam uma demanda"
               />
             </div>
           </Section>
@@ -240,11 +213,12 @@ export function AdminDashboard({
               title="Profissionais por segmento"
               description="Composição da carteira ativa."
             >
-              <BarList
+              <DistributionChart
                 items={data.segments.map((slice) => ({
                   label: slice.label,
                   value: slice.active_count,
                 }))}
+                shareOf="profissionais na carteira ativa"
                 emptyMessage="Nenhum profissional cadastrado ainda."
               />
             </Section>
@@ -253,11 +227,12 @@ export function AdminDashboard({
               title="Profissionais por região"
               description="Cobertura geográfica da carteira ativa."
             >
-              <BarList
+              <DistributionChart
                 items={data.regions.map((slice) => ({
                   label: slice.label,
                   value: slice.active_count,
                 }))}
+                shareOf="atuações por região na carteira ativa"
                 emptyMessage="Nenhuma região atribuída ainda."
                 note={
                   portfolio.professionals_without_region > 0

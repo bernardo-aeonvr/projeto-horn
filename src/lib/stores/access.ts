@@ -11,7 +11,9 @@ export type StoreAccess = {
   email: string;
   fullName: string | null;
   isActive: boolean;
-  /** `null` enquanto o lojista nunca entrou — ainda não definiu a senha. */
+  /** Senha provisória entregue pela administração, ainda não trocada. */
+  mustChangePassword: boolean;
+  /** `null` enquanto o lojista nunca entrou. */
   lastSignInAt: string | null;
   createdAt: string;
 };
@@ -22,6 +24,7 @@ type StoreAccessRow = {
   email: string | null;
   full_name: string | null;
   is_active: boolean;
+  must_change_password: boolean | null;
   last_sign_in_at: string | null;
   created_at: string;
 };
@@ -52,6 +55,7 @@ export async function listStoreAccess(): Promise<Map<string, StoreAccess[]>> {
       email: row.email ?? "",
       fullName: row.full_name,
       isActive: row.is_active,
+      mustChangePassword: row.must_change_password === true,
       lastSignInAt: row.last_sign_in_at,
       createdAt: row.created_at,
     });

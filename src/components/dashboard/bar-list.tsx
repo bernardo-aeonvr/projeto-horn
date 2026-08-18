@@ -13,10 +13,10 @@ type BarListProps = {
 /**
  * Distribuição em barras horizontais.
  *
- * Barra e não rosca: o cliente lê quantidade absoluta, e a soma das regiões
- * passa do total de profissionais porque um profissional atua em várias — uma
- * pizza sugeriria um todo de 100% que não existe (spec, "Profissionais por
- * região").
+ * É a visão alternativa do DistributionChart, que abre em pizza. Continua
+ * valendo a pena: a barra compara quantidade absoluta melhor que a fatia, e é
+ * a leitura honesta quando a soma não forma um todo — em "por região" um
+ * profissional atua em várias, então a soma passa do total da carteira.
  *
  * As barras são proporcionais ao maior valor da lista, não à soma, para as
  * categorias pequenas continuarem visíveis.

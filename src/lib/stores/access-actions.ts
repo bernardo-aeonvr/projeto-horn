@@ -4,12 +4,7 @@ import type { AuthError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
 import { authorizeAdminAction } from "@/lib/auth/session";
-import { getSiteUrl } from "@/lib/auth/site-url";
-import {
-  createAdminClient,
-  isAdminApiConfigured,
-  SECRET_KEY_ENV_NAME,
-} from "@/lib/supabase/admin";
+import { createAdminClient, SECRET_KEY_ENV_NAME } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 import type { StoreAccessFormState, StoreAccessResult } from "./types";
@@ -19,14 +14,15 @@ import type { StoreAccessFormState, StoreAccessResult } from "./types";
  *
  * Divisão de responsabilidades, de propósito:
  *
- *  - criar a conta em `auth.users` exige credencial privilegiada e é a única
- *    coisa feita pelo cliente administrativo;
+ *  - criar a conta em `auth.users` e trocar senha exigem credencial
+ *    privilegiada, e são as únicas coisas feitas pelo cliente administrativo;
  *  - definir papel, loja e status é feito com a sessão do próprio admin, então
- *    a policy `user_profiles_admin_update` continua sendo a autorização real;
- *  - a senha nunca passa pela aplicação: o lojista define a dele por um link
- *    de recuperação do Supabase Auth, de uso único.
+ *    a policy `user_profiles_admin_update` continua sendo a autorização real.
  *
- * Nenhuma senha é gerada, exibida, enviada ou gravada em tabela própria.
+ * A senha provisória existe em texto em um único ponto: o retorno da ação, que
+ * o administrador lê uma vez e entrega à loja. Ela não é gravada em tabela
+ * nenhuma — o banco guarda só o hash do Supabase Auth — e para de valer assim
+ * que o lojista faz a troca obrigatória no primeiro acesso.
  */
 
 const LOJAS_PATH = "/lojas";
@@ -46,7 +42,8 @@ function failure(
     status: "error",
     message,
     fieldErrors,
-    setupLink: null,
+    provisionalPassword: null,
+    provisionalEmail: null,
     succeededAt: null,
   };
 }
@@ -74,38 +71,53 @@ function readTrimmed(formData: FormData, field: string) {
 }
 
 /**
- * Monta o link de definição de senha.
+ * Alfabeto da senha provisória.
  *
- * É um link de recuperação do próprio Supabase Auth: expira em cerca de uma
- * hora e só funciona uma vez. `generateLink` devolve o endereço sem disparar
- * e-mail, o que permite ao administrador entregá-lo pelo canal que já usa com
- * a loja — importante porque o projeto ainda não tem SMTP próprio.
+ * Sem 0/O, 1/l/I e sem símbolos: a senha vai ser lida em voz alta, digitada à
+ * mão do WhatsApp e às vezes copiada de um print. Ambiguidade aqui vira
+ * chamado de suporte, não segurança.
  */
-async function buildPasswordSetupLink(email: string): Promise<string | null> {
-  const admin = createAdminClient();
-  if (!admin) return null;
+const PASSWORD_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const PASSWORD_LENGTH = 14;
 
-  const siteUrl = await getSiteUrl();
+/**
+ * Senha provisória aleatória.
+ *
+ * Usa `crypto.getRandomValues` — `Math.random` não serve para credencial. Com
+ * 56 símbolos e 14 posições são ~81 bits de entropia, folgado para uma senha
+ * que só precisa sobreviver até o primeiro login.
+ *
+ * O descarte do resto da divisão evita o viés de módulo, que tornaria as
+ * primeiras letras do alfabeto mais prováveis.
+ */
+function generateProvisionalPassword() {
+  const limit =
+    Math.floor(256 / PASSWORD_ALPHABET.length) * PASSWORD_ALPHABET.length;
+  const out: string[] = [];
 
-  const { data, error } = await admin.auth.admin.generateLink({
-    type: "recovery",
-    email,
-    options: { redirectTo: `${siteUrl}/auth/callback?next=/redefinir-senha` },
-  });
+  while (out.length < PASSWORD_LENGTH) {
+    const bytes = crypto.getRandomValues(new Uint8Array(PASSWORD_LENGTH));
 
-  if (error || !data?.properties?.action_link) {
-    console.error("[lojas] falha ao gerar link de definição de senha", error);
-    return null;
+    for (const byte of bytes) {
+      if (byte >= limit) continue;
+      out.push(PASSWORD_ALPHABET[byte % PASSWORD_ALPHABET.length]);
+      if (out.length === PASSWORD_LENGTH) break;
+    }
   }
 
-  return data.properties.action_link;
+  return out.join("");
 }
 
 /**
  * Cria o acesso de uma loja.
  *
- * A conta nasce sem senha e já confirmada; quem define a senha é o lojista,
- * pelo link devolvido no fim.
+ * A conta nasce com uma senha provisória aleatória, devolvida uma única vez
+ * para o administrador entregar junto com o e-mail. Ela é marcada como
+ * provisória: no primeiro login o lojista é obrigado a trocá-la, e a senha que
+ * circulou por WhatsApp deixa de valer.
+ *
+ * A senha não é gravada em lugar nenhum — o banco guarda só o hash do Supabase
+ * Auth, e este retorno é a única vez que ela existe em texto.
  */
 export async function provisionStoreAccessAction(
   _prevState: StoreAccessFormState,
@@ -145,10 +157,12 @@ export async function provisionStoreAccessAction(
     return failure("Loja não encontrada. Recarregue a página.");
   }
 
+  const password = generateProvisionalPassword();
+
   const { data: created, error: createError } =
     await admin.auth.admin.createUser({
       email,
-      // Sem senha: o lojista define a dele pelo link de recuperação.
+      password,
       email_confirm: true,
       user_metadata: fullName ? { full_name: fullName } : {},
     });
@@ -172,6 +186,8 @@ export async function provisionStoreAccessAction(
       role: "store",
       store_id: storeId,
       is_active: true,
+      // A senha entregue por fora só vale até o primeiro login.
+      must_change_password: true,
     })
     .eq("id", userId)
     .select("id");
@@ -187,37 +203,34 @@ export async function provisionStoreAccessAction(
     );
   }
 
-  const setupLink = await buildPasswordSetupLink(email);
-
   revalidatePath(LOJAS_PATH);
 
   return {
     status: "success",
-    message: setupLink
-      ? `Acesso criado para ${email}. Envie o link abaixo para a loja definir a senha.`
-      : `Acesso criado para ${email}. Não foi possível gerar o link agora — use "Gerar novo link" para tentar de novo.`,
+    message: `Acesso criado para ${email}.`,
     fieldErrors: {},
-    setupLink,
+    provisionalPassword: password,
+    provisionalEmail: email,
     succeededAt: Date.now(),
   };
 }
 
 /**
- * Gera um novo link de definição de senha para um acesso existente.
+ * Gera uma nova senha provisória para um acesso existente.
  *
- * É o caminho de recuperação quando o lojista perde o link, nunca entrou ou
- * esqueceu a senha — sem que ninguém precise conhecer ou digitar a senha dele.
+ * É o caminho de recuperação enquanto o projeto não tem SMTP próprio: o
+ * "Esqueci minha senha" do lojista não chega, então quem redefine é o
+ * administrador, entregando a senha nova pelo mesmo canal de sempre.
+ *
+ * A senha anterior para de valer no instante em que esta roda, e a nova volta
+ * a ser provisória — o lojista troca no login seguinte.
  */
-export async function createStoreAccessLinkAction(
+export async function resetStoreAccessPasswordAction(
   userId: string,
 ): Promise<StoreAccessResult> {
   const authorization = await authorizeAdminAction();
   if (!authorization.ok) {
     return { ok: false, message: authorization.message };
-  }
-
-  if (!isAdminApiConfigured()) {
-    return { ok: false, message: MISSING_SECRET_KEY };
   }
 
   const admin = createAdminClient();
@@ -237,25 +250,39 @@ export async function createStoreAccessLinkAction(
     return { ok: false, message: "Este acesso não pertence a uma loja." };
   }
 
-  const { data: target, error } = await admin.auth.admin.getUserById(userId);
+  const password = generateProvisionalPassword();
 
-  if (error || !target.user?.email) {
-    return { ok: false, message: "Não foi possível localizar este acesso." };
+  const { error: updateError } = await admin.auth.admin.updateUserById(userId, {
+    password,
+  });
+
+  if (updateError) {
+    return { ok: false, message: translateAuthError(updateError) };
   }
 
-  const link = await buildPasswordSetupLink(target.user.email);
+  const { error: markError } = await supabase
+    .from("user_profiles")
+    .update({ must_change_password: true })
+    .eq("id", userId);
 
-  if (!link) {
+  if (markError) {
+    // A senha já trocou; não marcar como provisória só significa que o lojista
+    // não será obrigado a trocá-la. Vale avisar em vez de fingir sucesso.
+    console.error("[lojas] falha ao marcar senha como provisória", markError);
     return {
-      ok: false,
-      message: "Não foi possível gerar o link agora. Tente novamente.",
+      ok: true,
+      message:
+        "Senha redefinida, mas não foi possível exigir a troca no próximo acesso. Peça à loja que troque a senha depois de entrar.",
+      password,
     };
   }
 
+  revalidatePath(LOJAS_PATH);
+
   return {
     ok: true,
-    message: "Link gerado. Ele vale por cerca de uma hora e só pode ser usado uma vez.",
-    link,
+    message: "Senha provisória gerada. A anterior deixou de valer.",
+    password,
   };
 }
 

@@ -9,7 +9,6 @@ import { signOutAction } from "@/lib/auth/actions";
 export type UserMenuProfile = {
   name: string;
   email: string;
-  initials: string;
   /** Rótulo do perfil: "Administrador" ou o nome da loja. */
   roleLabel: string;
 };
@@ -18,16 +17,21 @@ export function UserMenu({ user }: { user: UserMenuProfile }) {
   return (
     <Dropdown
       triggerLabel="Menu do usuário"
-      triggerClassName="flex max-w-56 items-center gap-2.5 rounded-lg py-1.5 pl-1.5 pr-2 transition-colors hover:bg-graphite-100 aria-expanded:bg-graphite-100"
+      triggerClassName="flex max-w-36 items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-graphite-100 aria-expanded:bg-graphite-100 sm:max-w-56"
       panelClassName="w-64"
       trigger={
         <>
-          <Avatar initials={user.initials} />
-          <span className="hidden min-w-0 flex-1 text-left md:block">
+          {/*
+            Sem avatar: o nome é quem identifica o usuário. Ele aparece em
+            todas as larguras porque, no celular, o gatilho ficaria reduzido a
+            uma seta solta — e o rótulo do perfil, que dá o contexto de "quem
+            eu sou aqui", só cabe a partir do sm.
+          */}
+          <span className="min-w-0 flex-1 text-left">
             <span className="block truncate text-sm font-medium leading-tight text-graphite-900">
               {user.name}
             </span>
-            <span className="block truncate text-xs leading-tight text-graphite-500">
+            <span className="hidden truncate text-xs leading-tight text-graphite-500 sm:block">
               {user.roleLabel}
             </span>
           </span>
@@ -38,17 +42,14 @@ export function UserMenu({ user }: { user: UserMenuProfile }) {
         </>
       }
     >
-      <div className="flex items-start gap-3 border-b border-graphite-100 px-3.5 py-3.5">
-        <Avatar initials={user.initials} />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-graphite-900">
-            {user.name}
-          </p>
-          <p className="truncate text-xs text-graphite-500">{user.email}</p>
-          <span className="mt-1.5 inline-flex max-w-full items-center truncate rounded-md bg-gold-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-gold-800">
-            {user.roleLabel}
-          </span>
-        </div>
+      <div className="min-w-0 border-b border-graphite-100 px-3.5 py-3.5">
+        <p className="truncate text-sm font-medium text-graphite-900">
+          {user.name}
+        </p>
+        <p className="truncate text-xs text-graphite-500">{user.email}</p>
+        <span className="mt-1.5 inline-flex max-w-full items-center truncate rounded-md bg-gold-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-gold-800">
+          {user.roleLabel}
+        </span>
       </div>
 
       <div className="p-1.5">
@@ -75,16 +76,5 @@ export function UserMenu({ user }: { user: UserMenuProfile }) {
         </form>
       </div>
     </Dropdown>
-  );
-}
-
-function Avatar({ initials }: { initials: string }) {
-  return (
-    <span
-      aria-hidden
-      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-graphite-900 text-xs font-semibold tracking-wide text-gold-400"
-    >
-      {initials}
-    </span>
   );
 }

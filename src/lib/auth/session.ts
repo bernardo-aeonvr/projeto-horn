@@ -7,6 +7,7 @@ import {
   DEFAULT_AUTHENTICATED_ROUTE,
   LOGIN_ROUTE,
   NO_ACCESS_ROUTE,
+  RESET_PASSWORD_ROUTE,
 } from "./routes";
 
 /** Perfis de acesso do MVP (public.app_role). */
@@ -17,11 +18,15 @@ export type SessionUser = {
   email: string;
   /** Nome exibido no menu do usuário. Cai para o e-mail quando não houver. */
   name: string;
-  initials: string;
   role: AppRole;
   /** Sempre preenchido quando `role` é "store". `null` para admin. */
   storeId: string | null;
   storeName: string | null;
+  /**
+   * Senha provisória entregue pela administração, ainda não trocada.
+   * Enquanto for `true`, nenhuma tela do sistema abre — só a troca de senha.
+   */
+  mustChangePassword: boolean;
 };
 
 /**
@@ -47,20 +52,9 @@ type UserProfileRow = {
   role: AppRole | null;
   store_id: string | null;
   is_active: boolean | null;
+  must_change_password: boolean | null;
   stores: { name: string } | { name: string }[] | null;
 };
-
-function buildInitials(name: string) {
-  const parts = name
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 function readStoreName(stores: UserProfileRow["stores"]) {
   if (!stores) return null;
@@ -94,7 +88,9 @@ export const getAccessState = cache(async function getAccessState(): Promise<Acc
 
   const { data: profile, error } = await supabase
     .from("user_profiles")
-    .select("full_name, role, store_id, is_active, stores(name)")
+    .select(
+      "full_name, role, store_id, is_active, must_change_password, stores(name)",
+    )
     .eq("id", user.id)
     .maybeSingle<UserProfileRow>();
 
@@ -130,10 +126,10 @@ export const getAccessState = cache(async function getAccessState(): Promise<Acc
       id: user.id,
       email,
       name,
-      initials: buildInitials(name),
       role: profile.role,
       storeId: profile.role === "store" ? profile.store_id : null,
       storeName: readStoreName(profile.stores),
+      mustChangePassword: profile.must_change_password === true,
     },
   };
 });
@@ -155,6 +151,15 @@ export async function requireSessionUser(): Promise<SessionUser> {
 
   if (state.status === "anonymous") redirect(LOGIN_ROUTE);
   if (state.status === "denied") redirect(NO_ACCESS_ROUTE);
+
+  /*
+    Senha provisória ainda não trocada: o usuário não passa daqui.
+
+    A troca fica em /redefinir-senha, que vive fora de `(app)` e portanto não
+    chama esta função — não há laço de redirecionamento. Como toda página
+    privada passa por aqui, não existe rota que escape da troca.
+  */
+  if (state.user.mustChangePassword) redirect(RESET_PASSWORD_ROUTE);
 
   return state.user;
 }

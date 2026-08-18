@@ -1,9 +1,9 @@
-import { CircleAlert, CircleCheck } from "lucide-react";
+import { CircleAlert, CircleCheck, Info } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 type FormAlertProps = {
-  tone: "error" | "success";
+  tone: "error" | "success" | "info";
   children: React.ReactNode;
   className?: string;
 };
@@ -18,6 +18,12 @@ const TONES = {
     box: "border-emerald-200 bg-emerald-50 text-emerald-800",
     icon: "text-emerald-600",
     Icon: CircleCheck,
+  },
+  /** Aviso neutro, na cor da marca: contexto, não erro nem confirmação. */
+  info: {
+    box: "border-gold-200 bg-gold-50/60 text-graphite-700",
+    icon: "text-gold-600",
+    Icon: Info,
   },
 } as const;
 

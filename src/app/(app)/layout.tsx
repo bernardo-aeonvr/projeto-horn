@@ -21,7 +21,6 @@ export default async function AppLayout({
         user={{
           name: user.name,
           email: user.email,
-          initials: user.initials,
           role: user.role,
           // Identifica o ambiente autenticado no cabeçalho. Sempre nulo para
           // admin, que não está dentro de nenhuma loja.

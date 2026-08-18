@@ -18,8 +18,8 @@ import { useToast } from "@/components/ui/toast";
 import { formatContactedAt } from "@/lib/contacts/period";
 import type { StoreAccess } from "@/lib/stores/access";
 import {
-  createStoreAccessLinkAction,
   provisionStoreAccessAction,
+  resetStoreAccessPasswordAction,
   setStoreAccessActiveAction,
 } from "@/lib/stores/access-actions";
 import { initialStoreAccessFormState, type Store } from "@/lib/stores/types";
@@ -36,8 +36,11 @@ type StoreAccessPanelProps = {
  * Acesso da loja, dentro do próprio cadastro.
  *
  * Substitui um módulo de "Usuários", que a especificação não pede (seção 5.1).
- * A senha nunca aparece aqui: o lojista define a dele por um link de uso único
- * do Supabase Auth.
+ *
+ * O acesso nasce com uma senha provisória aleatória, mostrada uma única vez
+ * para o administrador entregar junto com o e-mail. Ela é marcada como
+ * provisória: no primeiro login a loja é obrigada a trocá-la, e a senha que
+ * circulou por fora para de valer.
  */
 export function StoreAccessPanel({
   store,
@@ -55,8 +58,8 @@ export function StoreAccessPanel({
   const [showForm, setShowForm] = useState(accesses.length === 0);
   const lastHandledRef = useRef<number | null>(null);
 
-  // Recarrega a listagem uma única vez por provisionamento bem-sucedido. O
-  // link fica na tela até o administrador fechar o painel.
+  // Recarrega a listagem uma única vez por provisionamento bem-sucedido. As
+  // credenciais ficam na tela até o administrador fechar o painel.
   useEffect(() => {
     if (
       state.status === "success" &&
@@ -111,10 +114,10 @@ export function StoreAccessPanel({
           )}
         </section>
 
-        {state.setupLink ? (
-          <SetupLink
-            link={state.setupLink}
-            description="Envie por um canal privado. O link vale por cerca de uma hora e só pode ser usado uma vez."
+        {state.provisionalPassword ? (
+          <ProvisionalCredentials
+            email={state.provisionalEmail ?? ""}
+            password={state.provisionalPassword}
           />
         ) : null}
 
@@ -139,7 +142,7 @@ export function StoreAccessPanel({
                 placeholder="financeiro@loja.com.br"
                 required
                 error={state.fieldErrors.email}
-                hint="Será o login da loja. A senha é definida pelo próprio lojista."
+                hint="Será o login da loja. Vamos gerar uma senha provisória para você entregar."
               />
 
               <TextField
@@ -205,18 +208,19 @@ function AccessRow({
   onChanged: () => void;
   onToast: (tone: "success" | "error", message: string) => void;
 }) {
-  const [link, setLink] = useState<string | null>(null);
+  const [password, setPassword] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [, startTransition] = useTransition();
 
-  async function handleGenerateLink() {
+  async function handleResetPassword() {
     setGenerating(true);
-    const result = await createStoreAccessLinkAction(access.userId);
+    const result = await resetStoreAccessPasswordAction(access.userId);
     setGenerating(false);
 
     onToast(result.ok ? "success" : "error", result.message);
-    if (result.ok && result.link) setLink(result.link);
+    if (result.ok && result.password) setPassword(result.password);
+    if (result.ok) onChanged();
   }
 
   function handleToggle() {
@@ -245,6 +249,7 @@ function AccessRow({
             {access.lastSignInAt
               ? `último acesso em ${formatContactedAt(access.lastSignInAt)}`
               : "ainda não entrou"}
+            {access.mustChangePassword ? " · senha provisória pendente" : ""}
           </p>
         </div>
 
@@ -255,7 +260,7 @@ function AccessRow({
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => void handleGenerateLink()}
+          onClick={() => void handleResetPassword()}
           disabled={generating || !canProvision}
           title={
             canProvision
@@ -268,7 +273,7 @@ function AccessRow({
           ) : (
             <KeyRound className="size-3.5" aria-hidden />
           )}
-          Gerar link de senha
+          Gerar nova senha
         </Button>
 
         <Button
@@ -288,11 +293,8 @@ function AccessRow({
         </Button>
       </div>
 
-      {link ? (
-        <SetupLink
-          link={link}
-          description="Uso único, válido por cerca de uma hora. Envie por um canal privado."
-        />
+      {password ? (
+        <ProvisionalCredentials email={access.email} password={password} />
       ) : null}
     </li>
   );
@@ -321,17 +323,20 @@ export function AccessStatusBadge({ active }: { active: boolean }) {
 }
 
 /**
- * Link de definição de senha.
+ * Credenciais provisórias, para o administrador entregar à loja.
  *
- * Mostrado para o administrador copiar e entregar à loja. Não é senha: é um
- * token de uso único do Supabase Auth, que expira sozinho.
+ * Aparecem uma única vez. A senha não é guardada em lugar nenhum — o banco tem
+ * só o hash — então não há como recuperá-la depois: só gerar outra.
+ *
+ * O botão copia e-mail e senha juntos, já com um texto pronto, porque é assim
+ * que a informação vai ser entregue de verdade: colada em uma conversa.
  */
-function SetupLink({
-  link,
-  description,
+function ProvisionalCredentials({
+  email,
+  password,
 }: {
-  link: string;
-  description: string;
+  email: string;
+  password: string;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -344,7 +349,9 @@ function SetupLink({
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(link);
+      await navigator.clipboard.writeText(
+        `Acesso HORN\nE-mail: ${email}\nSenha provisória: ${password}\n\nNo primeiro acesso você vai criar sua própria senha.`,
+      );
       setCopied(true);
     } catch {
       // Navegador sem permissão de área de transferência: o texto continua
@@ -356,30 +363,42 @@ function SetupLink({
   return (
     <div className="mt-3 rounded-lg border border-gold-200 bg-gold-50/60 px-3.5 py-3">
       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-gold-800">
-        Link de definição de senha
+        Senha provisória
       </p>
       <p className="mt-1 text-xs leading-relaxed text-graphite-600">
-        {description}
+        Aparece só agora — depois de fechar não há como vê-la de novo, apenas
+        gerar outra. Envie por um canal privado; no primeiro acesso a loja cria
+        a própria senha e esta deixa de valer.
       </p>
 
-      <div className="mt-2.5 flex items-start gap-2">
-        <code className="min-w-0 flex-1 break-all rounded-md bg-white px-2.5 py-2 text-[11px] leading-relaxed text-graphite-700">
-          {link}
-        </code>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void handleCopy()}
-          aria-label="Copiar link"
-        >
-          {copied ? (
-            <Check className="size-3.5 text-emerald-600" aria-hidden />
-          ) : (
-            <Copy className="size-3.5" aria-hidden />
-          )}
-          {copied ? "Copiado" : "Copiar"}
-        </Button>
-      </div>
+      <dl className="mt-2.5 space-y-1.5">
+        <div className="flex items-baseline gap-2">
+          <dt className="w-16 shrink-0 text-xs text-graphite-500">E-mail</dt>
+          <dd className="min-w-0 flex-1 break-all rounded-md bg-white px-2.5 py-1.5 text-xs text-graphite-800">
+            {email}
+          </dd>
+        </div>
+        <div className="flex items-baseline gap-2">
+          <dt className="w-16 shrink-0 text-xs text-graphite-500">Senha</dt>
+          <dd className="min-w-0 flex-1 break-all rounded-md bg-white px-2.5 py-1.5 font-mono text-sm font-medium tracking-wide text-graphite-900">
+            {password}
+          </dd>
+        </div>
+      </dl>
+
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => void handleCopy()}
+        className="mt-2.5"
+      >
+        {copied ? (
+          <Check className="size-3.5 text-emerald-600" aria-hidden />
+        ) : (
+          <Copy className="size-3.5" aria-hidden />
+        )}
+        {copied ? "Copiado" : "Copiar e-mail e senha"}
+      </Button>
     </div>
   );
 }

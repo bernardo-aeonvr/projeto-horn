@@ -140,6 +140,23 @@ export async function updatePasswordAction(
     return { error: translateAuthError(error), success: null };
   }
 
+  /*
+    Dá baixa na senha provisória, se havia uma. É o que libera o sistema para
+    quem entrou com senha entregue pela administração.
+
+    A função só desliga a marca do próprio usuário — a policy de user_profiles
+    reserva UPDATE ao admin, então o lojista não conseguiria fazer isso direto
+    na tabela. Uma falha aqui não invalida a troca de senha, que já aconteceu:
+    o usuário só voltaria a cair na tela de troca no próximo acesso.
+  */
+  const { error: clearError } = await supabase.rpc(
+    "clear_must_change_password",
+  );
+
+  if (clearError) {
+    console.error("[auth] falha ao dar baixa na senha provisória", clearError);
+  }
+
   revalidatePath("/", "layout");
 
   return { error: null, success: "Senha alterada com sucesso." };

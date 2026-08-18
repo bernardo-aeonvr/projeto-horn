@@ -50,12 +50,35 @@ export default async function ResetPasswordPage() {
     );
   }
 
+  /*
+    Quem chega aqui com senha provisória foi mandado por `requireSessionUser`,
+    e não sai enquanto não trocar. O texto precisa explicar isso — senão a tela
+    parece um erro, e a pessoa acabou de digitar uma senha que funcionou.
+  */
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("must_change_password")
+    .eq("id", user.id)
+    .maybeSingle<{ must_change_password: boolean | null }>();
+
+  const isProvisional = profile?.must_change_password === true;
+
   return (
     <>
       <AuthHeading
-        title="Definir nova senha"
-        description={`Escolha uma nova senha para o acesso ${user.email}.`}
+        title={isProvisional ? "Crie sua senha" : "Definir nova senha"}
+        description={
+          isProvisional
+            ? `A senha que você recebeu é provisória. Escolha uma senha só sua para o acesso ${user.email}.`
+            : `Escolha uma nova senha para o acesso ${user.email}.`
+        }
       />
+
+      {isProvisional ? (
+        <FormAlert tone="info" className="mb-5">
+          Depois de salvar, a senha enviada pela HORN deixa de funcionar.
+        </FormAlert>
+      ) : null}
 
       <ResetPasswordForm />
     </>

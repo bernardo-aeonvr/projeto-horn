@@ -37,7 +37,16 @@ export type StoreFilters = {
   status: StoreStatusFilter;
   /** Segmento exato, ou string vazia para todos. */
   category: string;
+  page: number;
 };
+
+/** Registros por página. Mesmo tamanho dos demais módulos da aplicação. */
+export const PAGE_SIZE = 25;
+
+export function parsePage(value: string | undefined): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
 
 export function parseStatusFilter(
   value: string | undefined,
@@ -95,8 +104,14 @@ export type StoreAccessFormState = {
   status: "idle" | "success" | "error";
   message: string | null;
   fieldErrors: Record<string, string>;
-  /** Link de definição de senha. Só existe após uma operação bem-sucedida. */
-  setupLink: string | null;
+  /**
+   * Senha provisória recém-gerada, para o administrador entregar à loja.
+   * Aparece uma única vez: não é guardada em lugar nenhum, e o banco só tem o
+   * hash produzido pelo Supabase Auth.
+   */
+  provisionalPassword: string | null;
+  /** E-mail do acesso recém-criado, exibido junto da senha provisória. */
+  provisionalEmail: string | null;
   succeededAt: number | null;
 };
 
@@ -104,13 +119,14 @@ export const initialStoreAccessFormState: StoreAccessFormState = {
   status: "idle",
   message: null,
   fieldErrors: {},
-  setupLink: null,
+  provisionalPassword: null,
+  provisionalEmail: null,
   succeededAt: null,
 };
 
 export type StoreAccessResult = {
   ok: boolean;
   message: string;
-  /** Link de definição de senha, quando a ação gerou um. */
-  link?: string;
+  /** Senha provisória, quando a ação gerou uma. Exibida uma única vez. */
+  password?: string;
 };

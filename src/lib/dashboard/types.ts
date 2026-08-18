@@ -14,11 +14,20 @@
 export type PortfolioTotals = {
   professionals_total: number;
   professionals_active: number;
+  /** Fora da carteira ativa. Não vai à tela: é `total - ativos`. */
   professionals_inactive: number;
   /** Ativos sem nenhuma região cadastrada — o gráfico de regiões não os cobre. */
   professionals_without_region: number;
+  /**
+   * Ativos que nunca receberam contato, em toda a história.
+   * A regra central do produto em forma de número: estar cadastrado não
+   * significa ter sido contatado.
+   */
+  professionals_never_contacted: number;
   stores_total: number;
   stores_active: number;
+  /** Lojas ativas que nunca receberam projeto: apresentadas, mas sem demanda. */
+  stores_without_projects: number;
 };
 
 /** Eventos do período. Cada campo usa a data do acontecimento que representa. */
@@ -126,20 +135,9 @@ export type StoreDashboardData = {
   error: string | null;
 };
 
-/**
- * Conversão contato → projeto.
- *
- * Definição deliberadamente simples e verificável: dos profissionais
- * contatados no período, quantos geraram ao menos um projeto no mesmo período.
- * Não tenta correlacionar o contato específico que originou a demanda — isso
- * exigiria um vínculo que o schema não tem e produziria um número que parece
- * preciso sem ser (spec: "prefira apresentar uma conversão simples e
- * claramente definida").
- *
- * Devolve null quando não houve contato: 0% seria uma leitura enganosa.
+/*
+ * A conversão contato → projeto saiu do dashboard: ela era construída a partir
+ * de "profissionais contatados" e "projetos recebidos", que já são dois cards.
+ * `professionals_with_projects` continua vindo do banco e no tipo, pronto para
+ * quando houver uma tela que a use sem repetir outro indicador.
  */
-export function conversionRate(metrics: ActivityMetrics): number | null {
-  if (metrics.professionals_contacted === 0) return null;
-
-  return metrics.professionals_with_projects / metrics.professionals_contacted;
-}

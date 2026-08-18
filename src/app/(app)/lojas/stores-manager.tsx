@@ -1,13 +1,14 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 
+import { Pagination } from "@/components/ui/pagination";
 import { SlideOver } from "@/components/ui/slide-over";
 import { useToast } from "@/components/ui/toast";
 import type { StoreAccess } from "@/lib/stores/access";
 import { setStoreActiveAction } from "@/lib/stores/actions";
-import type { Store, StoreFilters } from "@/lib/stores/types";
+import { PAGE_SIZE, type Store, type StoreFilters } from "@/lib/stores/types";
 
 import {
   NoStoresFound,
@@ -23,8 +24,12 @@ type StoresManagerProps = {
   stores: Store[];
   categories: string[];
   filters: StoreFilters;
+  /** Lojas que atendem aos filtros, somando todas as páginas. */
+  filteredCount: number;
   /** Total de lojas sem filtro — separa "base vazia" de "busca sem resultado". */
   totalCount: number;
+  page: number;
+  pageCount: number;
   loadError: string | null;
   /** Acessos já provisionados, indexados pelo id da loja. */
   accessByStore: Record<string, StoreAccess[]>;
@@ -43,18 +48,22 @@ export function StoresManager({
   stores,
   categories,
   filters,
+  filteredCount,
   totalCount,
+  page,
+  pageCount,
   loadError,
   accessByStore,
   canProvisionAccess,
 }: StoresManagerProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { showToast } = useToast();
 
   const [panel, setPanel] = useState<PanelState>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [pending, startTransition] = useTransition();
 
   const closePanel = useCallback(() => setPanel(null), []);
 
@@ -89,6 +98,24 @@ export function StoresManager({
     router.replace(pathname, { scroll: false });
   }, [router, pathname]);
 
+  // Preserva os filtros ao trocar de página; a barra de filtros faz o inverso
+  // e recomeça da primeira página quando o recorte muda.
+  const goToPage = useCallback(
+    (nextPage: number) => {
+      const params = new URLSearchParams(searchParams);
+      if (nextPage <= 1) params.delete("pagina");
+      else params.set("pagina", String(nextPage));
+
+      const query = params.toString();
+      startTransition(() => {
+        router.replace(query ? `${pathname}?${query}` : pathname, {
+          scroll: false,
+        });
+      });
+    },
+    [pathname, router, searchParams],
+  );
+
   if (loadError) {
     return <StoresLoadError message={loadError} />;
   }
@@ -101,7 +128,9 @@ export function StoresManager({
         <StoresToolbar
           filters={filters}
           categories={categories}
-          resultCount={stores.length}
+          // O total dos filtros, não o tamanho da página: com paginação,
+          // stores.length pararia em 25 e a contagem viraria mentira.
+          resultCount={filteredCount}
           onNewStore={() => setPanel({ mode: "new" })}
         />
       ) : null}
@@ -111,14 +140,25 @@ export function StoresManager({
       ) : stores.length === 0 ? (
         <NoStoresFound onClearFilters={clearFilters} />
       ) : (
-        <StoreList
-          stores={stores}
-          accessByStore={accessByStore}
-          onEdit={(store) => setPanel({ mode: "edit", store })}
-          onManageAccess={(store) => setPanel({ mode: "access", store })}
-          onToggleActive={handleToggleActive}
-          pendingId={togglingId}
-        />
+        <>
+          <StoreList
+            stores={stores}
+            accessByStore={accessByStore}
+            onEdit={(store) => setPanel({ mode: "edit", store })}
+            onManageAccess={(store) => setPanel({ mode: "access", store })}
+            onToggleActive={handleToggleActive}
+            pendingId={togglingId}
+          />
+
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            totalItems={filteredCount}
+            pageSize={PAGE_SIZE}
+            onPageChange={goToPage}
+            pending={pending}
+          />
+        </>
       )}
 
       <SlideOver

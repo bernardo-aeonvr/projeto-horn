@@ -70,8 +70,10 @@ const EMPTY_PORTFOLIO: PortfolioTotals = {
   professionals_active: 0,
   professionals_inactive: 0,
   professionals_without_region: 0,
+  professionals_never_contacted: 0,
   stores_total: 0,
   stores_active: 0,
+  stores_without_projects: 0,
 };
 
 type DistributionRow = {
@@ -191,8 +193,12 @@ export async function loadAdminDashboard(
           professionals_without_region: count(
             portfolioRow.professionals_without_region,
           ),
+          professionals_never_contacted: count(
+            portfolioRow.professionals_never_contacted,
+          ),
           stores_total: count(portfolioRow.stores_total),
           stores_active: count(portfolioRow.stores_active),
+          stores_without_projects: count(portfolioRow.stores_without_projects),
         }
       : EMPTY_PORTFOLIO,
     metrics: toMetrics((metricsResponse.data as MetricsRow[] | null)?.[0]),

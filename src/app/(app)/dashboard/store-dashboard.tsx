@@ -1,7 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 
-import { BarList } from "@/components/dashboard/bar-list";
+import { DistributionChart } from "@/components/dashboard/distribution-chart";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { ErrorState } from "@/components/ui/empty-state";
 import type { DashboardPeriod, PeriodRange } from "@/lib/dashboard/period";
@@ -82,7 +82,7 @@ export function StoreDashboard({
     <>
       {filters}
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4 lg:grid-cols-4">
         {/*
           Alcance é o total da HORN no período, não o recorte desta loja — o
           texto de apoio precisa dizer isso, senão o número vira uma promessa
@@ -111,7 +111,7 @@ export function StoreDashboard({
         />
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4 lg:grid-cols-4">
         <KpiCard
           size="sm"
           label="Valor proposto"
@@ -144,11 +144,12 @@ export function StoreDashboard({
           title="Segmentos alcançados"
           description="Profissionais contatados pela HORN no período, por área de atuação."
         >
-          <BarList
+          <DistributionChart
             items={data.segments.map((slice) => ({
               label: slice.label,
               value: slice.active_count,
             }))}
+            shareOf="profissionais contatados no período"
             emptyMessage="Nenhum profissional alcançado neste período."
           />
         </Section>
@@ -157,11 +158,12 @@ export function StoreDashboard({
           title="Regiões alcançadas"
           description="Cobertura geográfica dos profissionais contatados pela HORN."
         >
-          <BarList
+          <DistributionChart
             items={data.regions.map((slice) => ({
               label: slice.label,
               value: slice.active_count,
             }))}
+            shareOf="atuações por região dos contatados"
             emptyMessage="Nenhuma região alcançada neste período."
             note="Um profissional pode atuar em mais de uma região, então a soma passa do total de alcançados."
           />

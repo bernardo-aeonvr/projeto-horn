@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 
 import { toNumber } from "./format";
-import { STORE_COLUMNS, type Store, type StoreFilters } from "./types";
+import { PAGE_SIZE, STORE_COLUMNS, type Store, type StoreFilters } from "./types";
 
 type StoreRow = Omit<
   Store,
@@ -26,8 +26,12 @@ function escapeLikePattern(value: string) {
 
 export type StoreListResult = {
   stores: Store[];
+  /** Quantas lojas atendem aos filtros. Base da paginação. */
+  filteredCount: number;
   /** Total sem o recorte de busca/segmento — usado para diferenciar os vazios. */
   totalCount: number;
+  page: number;
+  pageCount: number;
   error: string | null;
 };
 
@@ -42,7 +46,9 @@ export async function listStores(
 ): Promise<StoreListResult> {
   const supabase = await createClient();
 
-  let query = supabase.from("stores").select(STORE_COLUMNS);
+  let query = supabase
+    .from("stores")
+    .select(STORE_COLUMNS, { count: "exact" });
 
   if (filters.status === "ativas") query = query.eq("is_active", true);
   if (filters.status === "inativas") query = query.eq("is_active", false);
@@ -52,8 +58,13 @@ export async function listStores(
 
   if (filters.category) query = query.eq("category", filters.category);
 
+  // A paginação acontece no banco: a base tem dezenas de lojas e vai crescer.
+  const offset = (filters.page - 1) * PAGE_SIZE;
+
   const [listResponse, countResponse] = await Promise.all([
-    query.order("name", { ascending: true }),
+    query
+      .order("name", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1),
     supabase.from("stores").select("id", { count: "exact", head: true }),
   ]);
 
@@ -61,15 +72,23 @@ export async function listStores(
     console.error("[lojas] falha ao listar", listResponse.error);
     return {
       stores: [],
+      filteredCount: 0,
       totalCount: 0,
+      page: filters.page,
+      pageCount: 1,
       error:
         "Não foi possível carregar as lojas. Verifique a conexão e tente novamente.",
     };
   }
 
+  const filteredCount = listResponse.count ?? listResponse.data.length;
+
   return {
     stores: (listResponse.data as StoreRow[]).map(toStore),
-    totalCount: countResponse.count ?? listResponse.data.length,
+    filteredCount,
+    totalCount: countResponse.count ?? filteredCount,
+    page: filters.page,
+    pageCount: Math.max(1, Math.ceil(filteredCount / PAGE_SIZE)),
     error: null,
   };
 }

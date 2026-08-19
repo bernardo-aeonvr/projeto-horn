@@ -1,8 +1,14 @@
-import Link from "next/link";
+"use client";
 
+import Link from "next/link";
+import { useState } from "react";
+
+import { Pagination } from "@/components/ui/pagination";
 import type { StoreResult } from "@/lib/dashboard/types";
 import { formatCurrency } from "@/lib/stores/format";
 import { cn } from "@/lib/utils";
+
+const PAGE_SIZE = 10;
 
 /**
  * Comparativo entre lojas.
@@ -13,14 +19,30 @@ import { cn } from "@/lib/utils";
  *
  * Só lojas com alguma atividade no período aparecem; a contagem completa fica
  * no rodapé para a lista não virar um paredão de zeros.
+ *
+ * A paginação é local: a lista inteira já veio do servidor com o resto do
+ * dashboard, então trocar de página não precisa de nova requisição.
  */
 export function StoreResultsTable({ results }: { results: StoreResult[] }) {
+  const [page, setPage] = useState(1);
+
   const withActivity = results.filter(
     (row) =>
       row.professionals_reached > 0 ||
       row.projects_received > 0 ||
       row.proposals_sent > 0 ||
       row.deals_closed > 0,
+  );
+
+  const pageCount = Math.max(1, Math.ceil(withActivity.length / PAGE_SIZE));
+  /*
+    Mudar o filtro de período troca as props sem desmontar a tabela: sem o
+    limite, quem estivesse na página 4 cairia numa lista vazia.
+  */
+  const current = Math.min(page, pageCount);
+  const visible = withActivity.slice(
+    (current - 1) * PAGE_SIZE,
+    current * PAGE_SIZE,
   );
 
   if (withActivity.length === 0) {
@@ -50,7 +72,7 @@ export function StoreResultsTable({ results }: { results: StoreResult[] }) {
             </tr>
           </thead>
           <tbody>
-            {withActivity.map((row) => (
+            {visible.map((row) => (
               <tr
                 key={row.store_id}
                 className="border-b border-graphite-100 last:border-0"
@@ -86,7 +108,7 @@ export function StoreResultsTable({ results }: { results: StoreResult[] }) {
 
       {/* Mobile e tablet — cards */}
       <ul className="space-y-3 lg:hidden">
-        {withActivity.map((row) => (
+        {visible.map((row) => (
           <li
             key={row.store_id}
             className="rounded-lg border border-graphite-200 p-3.5"
@@ -120,6 +142,14 @@ export function StoreResultsTable({ results }: { results: StoreResult[] }) {
           </li>
         ))}
       </ul>
+
+      <Pagination
+        page={current}
+        pageCount={pageCount}
+        totalItems={withActivity.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
 
       <p className="mt-4 text-xs text-graphite-500">
         {withActivity.length} de {results.length}{" "}

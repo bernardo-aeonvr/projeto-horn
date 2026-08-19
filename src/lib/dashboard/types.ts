@@ -92,15 +92,6 @@ export type TrendPoint = {
 };
 
 /** Profissional alcançado, na visão que a loja pode ver. */
-export type ReachedProfessional = {
-  contact_id: string;
-  professional_id: string;
-  professional_name: string;
-  segment_name: string | null;
-  regions: string[];
-  contacted_at: string;
-};
-
 export type StoreOption = { id: string; name: string; is_active: boolean };
 
 /** Tudo que o Dashboard Admin renderiza de uma vez. */
@@ -130,7 +121,6 @@ export type StoreDashboardData = {
   metrics: ActivityMetrics;
   segments: DistributionSlice[];
   regions: DistributionSlice[];
-  reached: ReachedProfessional[];
   storeName: string | null;
   error: string | null;
 };

@@ -9,7 +9,6 @@ import type { StoreDashboardData } from "@/lib/dashboard/types";
 import { formatCurrency } from "@/lib/stores/format";
 
 import { DashboardFilters } from "./dashboard-filters";
-import { ReachedProfessionals } from "./reached-professionals";
 
 type StoreDashboardProps = {
   data: StoreDashboardData;
@@ -111,13 +110,11 @@ export function StoreDashboard({
         />
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4 lg:grid-cols-4">
-        <KpiCard
-          size="sm"
-          label="Valor proposto"
-          value={formatCurrency(metrics.total_proposed_value)}
-          hint="valor inicial das propostas enviadas"
-        />
+      {/*
+        Duas colunas em qualquer largura: com dois cards, a grade de quatro
+        deixaria metade da linha vazia.
+      */}
+      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4">
         <KpiCard
           size="sm"
           label="Valor fechado"
@@ -130,12 +127,6 @@ export function StoreDashboard({
           label="Comissão HORN"
           value={formatCurrency(metrics.total_commission_value)}
           hint="sobre os negócios fechados no período"
-        />
-        <KpiCard
-          size="sm"
-          label="Negócios perdidos"
-          value={integer(metrics.proposals_lost)}
-          hint="encerrados sem venda"
         />
       </div>
 
@@ -169,13 +160,6 @@ export function StoreDashboard({
           />
         </Section>
       </div>
-
-      <Section
-        title="Profissionais contatados"
-        description="Detalhamento do trabalho que a HORN realizou no período."
-      >
-        <ReachedProfessionals reached={data.reached} />
-      </Section>
 
       <p className="mt-4 text-sm text-graphite-500">
         Seus projetos e propostas, com valores e PDFs, ficam em{" "}

@@ -234,15 +234,6 @@ export async function loadAdminDashboard(
   };
 }
 
-type ReachRow = {
-  contact_id: string;
-  professional_id: string;
-  professional_name: string;
-  segment_name: string | null;
-  regions: string[] | null;
-  contacted_at: string;
-};
-
 type BreakdownRow = {
   kind: string;
   label: string;
@@ -256,9 +247,9 @@ type BreakdownRow = {
  * existe parâmetro de loja para trocar em nenhuma delas.
  *
  * Duas semânticas convivem aqui, por decisão de negócio (migration 0005):
- *   - alcance (profissionais contatados, segmentos, regiões, lista) = o
- *     trabalho da HORN inteiro no período, inclusive contatos em que esta loja
- *     não foi marcada;
+ *   - alcance (profissionais contatados, segmentos, regiões) = o trabalho da
+ *     HORN inteiro no período, inclusive contatos em que esta loja não foi
+ *     marcada;
  *   - comercial (projetos, propostas, valores, comissão) = só desta loja.
  */
 export async function loadStoreDashboard(
@@ -268,12 +259,13 @@ export async function loadStoreDashboard(
 ): Promise<StoreDashboardData> {
   const supabase = await createClient();
 
-  const [metricsResponse, reachResponse, breakdownResponse] = await Promise.all([
+  /*
+    A loja vê o alcance em agregado, nunca nome a nome: a lista de contatos
+    (get_store_contact_reach) saiu da tela e por isso deixou de ser buscada —
+    esses nomes não chegam mais nem ao payload da página.
+  */
+  const [metricsResponse, breakdownResponse] = await Promise.all([
     supabase.rpc("get_store_dashboard_metrics", {
-      p_from: range.from,
-      p_to: range.to,
-    }),
-    supabase.rpc("get_store_contact_reach", {
       p_from: range.from,
       p_to: range.to,
     }),
@@ -283,15 +275,13 @@ export async function loadStoreDashboard(
     }),
   ]);
 
-  const failure =
-    metricsResponse.error ?? reachResponse.error ?? breakdownResponse.error;
+  const failure = metricsResponse.error ?? breakdownResponse.error;
 
   if (failure) {
     return {
       metrics: EMPTY_METRICS,
       segments: [],
       regions: [],
-      reached: [],
       storeName,
       error: translate(failure, "loja"),
     };
@@ -311,14 +301,6 @@ export async function loadStoreDashboard(
     metrics: toMetrics((metricsResponse.data as MetricsRow[] | null)?.[0]),
     segments: slice("segment"),
     regions: slice("region"),
-    reached: ((reachResponse.data as ReachRow[] | null) ?? []).map((row) => ({
-      contact_id: row.contact_id,
-      professional_id: row.professional_id,
-      professional_name: row.professional_name,
-      segment_name: row.segment_name,
-      regions: row.regions ?? [],
-      contacted_at: row.contacted_at,
-    })),
     storeName,
     error: null,
   };

@@ -175,35 +175,18 @@ export function AdminDashboard({
             title="Carteira"
             description="Estado atual da base. Estes números descrevem o cadastro hoje e não mudam com o filtro de período."
           >
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4">
               <KpiCard
                 size="sm"
                 label="Profissionais ativos"
                 value={integer(portfolio.professionals_active)}
                 hint={`${integer(portfolio.professionals_total)} cadastrados no total`}
               />
-              {/*
-                Lacuna do lado do profissional. Cadastrar não é contatar
-                (spec, seção 7.5): este é o trabalho que ainda não foi feito.
-              */}
-              <KpiCard
-                size="sm"
-                label="Nunca contatados"
-                value={integer(portfolio.professionals_never_contacted)}
-                hint="ativos que ainda não receberam nenhum contato"
-              />
               <KpiCard
                 size="sm"
                 label="Lojas ativas"
                 value={integer(portfolio.stores_active)}
                 hint={`${integer(portfolio.stores_total)} cadastradas no total`}
-              />
-              {/* Lacuna do lado da loja: apresentada, mas sem demanda chegando. */}
-              <KpiCard
-                size="sm"
-                label="Lojas sem projeto"
-                value={integer(portfolio.stores_without_projects)}
-                hint="ativas que nunca receberam uma demanda"
               />
             </div>
           </Section>

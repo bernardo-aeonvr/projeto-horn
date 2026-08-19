@@ -180,18 +180,23 @@ export function DistributionChart({
         <BarList items={items} emptyMessage={emptyMessage} note={note} />
       ) : (
         <>
-          <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
+          {/*
+            Pizza e legenda andam juntas e centralizadas: nenhuma das duas
+            estica para preencher o card, então o par fica no meio em vez de
+            deixar um vazio à direita.
+          */}
+          <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:justify-center sm:gap-8">
             {/*
               O SVG fica fora da árvore de acessibilidade: a legenda ao lado
               traz rótulo, valor e percentual de cada fatia em texto, então a
               identidade nunca depende só da cor.
             */}
             <svg
-              width={SIZE}
-              height={SIZE}
               viewBox={`0 0 ${SIZE} ${SIZE}`}
               aria-hidden
-              className="shrink-0"
+              // Cresce com a tela: o espaço que sobra no card vai para o
+              // gráfico, não para o vão entre rótulo e número.
+              className="size-[168px] shrink-0 lg:size-[200px]"
               onMouseLeave={() => setActive(null)}
             >
               {drawn.length === 1 ? (
@@ -226,29 +231,39 @@ export function DistributionChart({
               )}
             </svg>
 
-            <ul className="w-full min-w-0 flex-1 space-y-0.5">
+            {/*
+              A legenda não estica junto com o card. Numa tela larga, uma lista
+              fluida empurra valor e percentual para a borda direita e desfaz o
+              pareamento com o rótulo — a partir de sm a coluna do rótulo mede o
+              maior texto e para por aí.
+
+              As colunas são do <ul> e cada <li> as herda por subgrid: os
+              números continuam alinhados entre as linhas, e o realce de hover
+              continua sendo uma linha só.
+            */}
+            <ul className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_3.25rem] gap-y-0.5 sm:w-auto sm:max-w-full">
               {slices.map((slice) => (
                 <li
                   key={slice.label}
                   onMouseEnter={() => setActive(slice.label)}
                   onMouseLeave={() => setActive(null)}
                   className={cn(
-                    "flex items-baseline gap-2.5 rounded-md px-1.5 py-1 transition-colors",
+                    "col-span-4 grid grid-cols-subgrid items-baseline gap-x-2.5 rounded-md px-1.5 py-1 transition-colors",
                     active === slice.label && "bg-graphite-50",
                   )}
                 >
                   <span
                     aria-hidden
-                    className="size-2.5 shrink-0 translate-y-px rounded-[3px]"
+                    className="size-2.5 translate-y-px rounded-[3px]"
                     style={{ backgroundColor: slice.color }}
                   />
-                  <span className="min-w-0 flex-1 truncate text-sm text-graphite-700">
+                  <span className="min-w-0 truncate text-sm text-graphite-700">
                     {slice.label}
                   </span>
-                  <span className="shrink-0 text-sm font-semibold tabular-nums text-graphite-900">
+                  <span className="text-right text-sm font-semibold tabular-nums text-graphite-900">
                     {slice.value.toLocaleString("pt-BR")}
                   </span>
-                  <span className="w-14 shrink-0 text-right text-xs tabular-nums text-graphite-500">
+                  <span className="text-right text-xs tabular-nums text-graphite-500">
                     {percent(slice.share)}
                   </span>
                 </li>

@@ -37,10 +37,9 @@ type StoreAccessPanelProps = {
  *
  * Substitui um módulo de "Usuários", que a especificação não pede (seção 5.1).
  *
- * O acesso nasce com uma senha provisória aleatória, mostrada uma única vez
- * para o administrador entregar junto com o e-mail. Ela é marcada como
- * provisória: no primeiro login a loja é obrigada a trocá-la, e a senha que
- * circulou por fora para de valer.
+ * O acesso nasce com uma senha aleatória, mostrada uma única vez para o
+ * administrador entregar junto com o e-mail. A loja entra direto com ela — a
+ * troca obrigatória no primeiro acesso está desligada por enquanto.
  */
 export function StoreAccessPanel({
   store,
@@ -142,7 +141,7 @@ export function StoreAccessPanel({
                 placeholder="financeiro@loja.com.br"
                 required
                 error={state.fieldErrors.email}
-                hint="Será o login da loja. Vamos gerar uma senha provisória para você entregar."
+                hint="Será o login da loja. Vamos gerar uma senha para você entregar."
               />
 
               <TextField
@@ -249,7 +248,6 @@ function AccessRow({
             {access.lastSignInAt
               ? `último acesso em ${formatContactedAt(access.lastSignInAt)}`
               : "ainda não entrou"}
-            {access.mustChangePassword ? " · senha provisória pendente" : ""}
           </p>
         </div>
 
@@ -323,7 +321,7 @@ export function AccessStatusBadge({ active }: { active: boolean }) {
 }
 
 /**
- * Credenciais provisórias, para o administrador entregar à loja.
+ * Credenciais de acesso, para o administrador entregar à loja.
  *
  * Aparecem uma única vez. A senha não é guardada em lugar nenhum — o banco tem
  * só o hash — então não há como recuperá-la depois: só gerar outra.
@@ -350,7 +348,7 @@ function ProvisionalCredentials({
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(
-        `Acesso HORN\nE-mail: ${email}\nSenha provisória: ${password}\n\nNo primeiro acesso você vai criar sua própria senha.`,
+        `Acesso HORN\nE-mail: ${email}\nSenha: ${password}`,
       );
       setCopied(true);
     } catch {
@@ -363,12 +361,12 @@ function ProvisionalCredentials({
   return (
     <div className="mt-3 rounded-lg border border-gold-200 bg-gold-50/60 px-3.5 py-3">
       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-gold-800">
-        Senha provisória
+        Senha de acesso
       </p>
       <p className="mt-1 text-xs leading-relaxed text-graphite-600">
         Aparece só agora — depois de fechar não há como vê-la de novo, apenas
-        gerar outra. Envie por um canal privado; no primeiro acesso a loja cria
-        a própria senha e esta deixa de valer.
+        gerar outra. Envie por um canal privado. A loja pode trocá-la quando
+        quiser em “Esqueci minha senha”.
       </p>
 
       <dl className="mt-2.5 space-y-1.5">

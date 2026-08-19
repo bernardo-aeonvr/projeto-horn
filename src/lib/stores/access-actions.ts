@@ -21,8 +21,8 @@ import type { StoreAccessFormState, StoreAccessResult } from "./types";
  *
  * A senha provisória existe em texto em um único ponto: o retorno da ação, que
  * o administrador lê uma vez e entrega à loja. Ela não é gravada em tabela
- * nenhuma — o banco guarda só o hash do Supabase Auth — e para de valer assim
- * que o lojista faz a troca obrigatória no primeiro acesso.
+ * nenhuma — o banco guarda só o hash do Supabase Auth. A troca no primeiro
+ * acesso não é exigida por ora: quem quiser trocar usa /redefinir-senha.
  */
 
 const LOJAS_PATH = "/lojas";
@@ -84,8 +84,7 @@ const PASSWORD_LENGTH = 14;
  * Senha provisória aleatória.
  *
  * Usa `crypto.getRandomValues` — `Math.random` não serve para credencial. Com
- * 56 símbolos e 14 posições são ~81 bits de entropia, folgado para uma senha
- * que só precisa sobreviver até o primeiro login.
+ * 56 símbolos e 14 posições são ~81 bits de entropia.
  *
  * O descarte do resto da divisão evita o viés de módulo, que tornaria as
  * primeiras letras do alfabeto mais prováveis.
@@ -112,9 +111,8 @@ function generateProvisionalPassword() {
  * Cria o acesso de uma loja.
  *
  * A conta nasce com uma senha provisória aleatória, devolvida uma única vez
- * para o administrador entregar junto com o e-mail. Ela é marcada como
- * provisória: no primeiro login o lojista é obrigado a trocá-la, e a senha que
- * circulou por WhatsApp deixa de valer.
+ * para o administrador entregar junto com o e-mail. O lojista entra direto com
+ * ela — a troca obrigatória no primeiro acesso está desligada por enquanto.
  *
  * A senha não é gravada em lugar nenhum — o banco guarda só o hash do Supabase
  * Auth, e este retorno é a única vez que ela existe em texto.
@@ -186,8 +184,6 @@ export async function provisionStoreAccessAction(
       role: "store",
       store_id: storeId,
       is_active: true,
-      // A senha entregue por fora só vale até o primeiro login.
-      must_change_password: true,
     })
     .eq("id", userId)
     .select("id");
@@ -222,8 +218,7 @@ export async function provisionStoreAccessAction(
  * "Esqueci minha senha" do lojista não chega, então quem redefine é o
  * administrador, entregando a senha nova pelo mesmo canal de sempre.
  *
- * A senha anterior para de valer no instante em que esta roda, e a nova volta
- * a ser provisória — o lojista troca no login seguinte.
+ * A senha anterior para de valer no instante em que esta roda.
  */
 export async function resetStoreAccessPasswordAction(
   userId: string,
@@ -258,23 +253,6 @@ export async function resetStoreAccessPasswordAction(
 
   if (updateError) {
     return { ok: false, message: translateAuthError(updateError) };
-  }
-
-  const { error: markError } = await supabase
-    .from("user_profiles")
-    .update({ must_change_password: true })
-    .eq("id", userId);
-
-  if (markError) {
-    // A senha já trocou; não marcar como provisória só significa que o lojista
-    // não será obrigado a trocá-la. Vale avisar em vez de fingir sucesso.
-    console.error("[lojas] falha ao marcar senha como provisória", markError);
-    return {
-      ok: true,
-      message:
-        "Senha redefinida, mas não foi possível exigir a troca no próximo acesso. Peça à loja que troque a senha depois de entrar.",
-      password,
-    };
   }
 
   revalidatePath(LOJAS_PATH);

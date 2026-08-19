@@ -6,7 +6,7 @@ export const LOGIN_ROUTE = "/login";
 /** Onde para quem está autenticado mas não tem acesso válido ao sistema. */
 export const NO_ACCESS_ROUTE = "/sem-acesso";
 
-/** Troca de senha. Também é a parada obrigatória de quem tem senha provisória. */
+/** Troca de senha, feita pelo próprio usuário quando ele quiser. */
 export const RESET_PASSWORD_ROUTE = "/redefinir-senha";
 
 /** Rotas acessíveis sem sessão. */

@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:authz:setup": "node tests/fixtures.mjs setup",
+    "test:authz": "node tests/authz.test.mjs",
+    "test:authz:teardown": "node tests/fixtures.mjs teardown"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

@@ -44,3 +44,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# fixtures gerados pelos testes de autorização (contêm ids e senhas de teste)
+/tests/fixtures.json

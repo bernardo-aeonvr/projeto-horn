@@ -144,6 +144,8 @@ Em *Project → Settings → Environment Variables*:
 | `NEXT_PUBLIC_SUPABASE_URL` | Production, Preview, Development | igual ao `.env.local` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Production, Preview, Development | igual ao `.env.local` |
 | `NEXT_PUBLIC_SITE_URL` | apenas Production | a URL final da aplicação |
+| `SUPABASE_SECRET_KEY` | Production (Preview, se for usar lá) | igual ao `.env.local` |
+| `CRON_SECRET` | apenas Production | um valor aleatório qualquer |
 
 `NEXT_PUBLIC_SITE_URL` deve ficar **vazia em Preview**: cada deploy de preview tem
 uma URL própria, e `getSiteUrl()` cai no header `x-forwarded-host` quando a
@@ -159,6 +161,32 @@ Configuration*):
 - **Redirect URLs** → acrescente `https://<dominio>/auth/callback` e, se quiser
   que a recuperação funcione nos previews, o padrão dos previews da Vercel
   (`https://*.vercel.app/**`).
+
+## Keep-alive do banco
+
+O plano gratuito do Supabase pausa projetos sem atividade por alguns dias, e
+despausar é manual, pelo painel. Um recesso do escritório derrubaria o sistema
+sem ninguém ter feito nada errado.
+
+O `vercel.json` agenda uma chamada diária a `/api/keep-alive`, que faz uma
+consulta trivial no banco — o que conta como atividade é a requisição chegar ao
+projeto. A rota usa `SUPABASE_SECRET_KEY`, porque o papel anônimo não tem
+privilégio nenhum desde a migration `0008`; sem a chave ela responde **503** em
+vez de fingir sucesso, e a falha aparece em *Vercel → Project → Cron Jobs*.
+
+Vale conferir depois do deploy:
+
+- o cron aparece em *Settings → Cron Jobs* (só roda em Production);
+- no plano Hobby a Vercel executa **uma vez por dia**, em horário aproximado —
+  o `0 9 * * *` do `vercel.json` é 06:00 em São Paulo;
+- `CRON_SECRET` cadastrada: a Vercel passa a mandar `Authorization: Bearer …`
+  sozinha, e a rota recusa quem chegar sem o segredo.
+
+Para testar à mão:
+
+```bash
+curl -i https://<dominio>/api/keep-alive -H "Authorization: Bearer $CRON_SECRET"
+```
 
 ## Scripts
 

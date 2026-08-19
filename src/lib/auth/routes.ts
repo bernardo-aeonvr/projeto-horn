@@ -9,12 +9,19 @@ export const NO_ACCESS_ROUTE = "/sem-acesso";
 /** Troca de senha, feita pelo próprio usuário quando ele quiser. */
 export const RESET_PASSWORD_ROUTE = "/redefinir-senha";
 
-/** Rotas acessíveis sem sessão. */
+/**
+ * Rotas acessíveis sem sessão.
+ *
+ * `/api/keep-alive` é chamada pelo cron da Vercel, que não carrega cookie
+ * nenhum. Quem protege essa rota é o `CRON_SECRET` conferido nela mesma, e
+ * tudo o que ela faz é contar linhas de um catálogo.
+ */
 const PUBLIC_ROUTES = [
   "/login",
   "/esqueci-a-senha",
   "/redefinir-senha",
   "/auth/callback",
+  "/api/keep-alive",
 ] as const;
 
 /**

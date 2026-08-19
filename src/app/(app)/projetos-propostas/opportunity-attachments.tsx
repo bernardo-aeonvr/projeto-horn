@@ -3,6 +3,7 @@
 import { FileText, Loader2, Paperclip, Trash2 } from "lucide-react";
 import { useRef, useState, useTransition } from "react";
 
+import { PdfPreviewDialog } from "@/components/ui/pdf-preview-dialog";
 import { useToast } from "@/components/ui/toast";
 import { formatContactedAt } from "@/lib/contacts/period";
 import {
@@ -63,6 +64,12 @@ export function OpportunityAttachments({
   const [uploading, setUploading] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  /* PDF em exibição. `url` nula = assinatura ainda em andamento. */
+  const [preview, setPreview] = useState<{
+    attachment: ProposalAttachment;
+    url: string | null;
+  } | null>(null);
   const [, startTransition] = useTransition();
 
   async function handleUpload(file: File) {
@@ -123,13 +130,36 @@ export function OpportunityAttachments({
     if (result.ok) onChanged();
   }
 
+  /*
+    Abre o PDF na própria tela. O diálogo aparece antes da URL assinada chegar
+    para o clique ter resposta imediata; se a assinatura falhar, ele fecha e o
+    erro vai para o toast.
+  */
   async function handleOpen(attachment: ProposalAttachment) {
     setOpeningId(attachment.id);
-    const result = await createAttachmentUrlAction(attachment.id);
+    setPreview({ attachment, url: null });
+
+    const result = await createAttachmentUrlAction(attachment.id, "inline");
     setOpeningId(null);
 
     if (!result.ok || !result.url) {
+      setPreview(null);
       showToast("error", result.message ?? "Não foi possível abrir o arquivo.");
+      return;
+    }
+
+    setPreview({ attachment, url: result.url });
+  }
+
+  // Baixar precisa da outra assinatura: a de visualização abre no navegador em
+  // vez de salvar, porque não carrega o Content-Disposition do download.
+  async function handleDownload(attachment: ProposalAttachment) {
+    setDownloading(true);
+    const result = await createAttachmentUrlAction(attachment.id, "download");
+    setDownloading(false);
+
+    if (!result.ok || !result.url) {
+      showToast("error", result.message ?? "Não foi possível baixar o arquivo.");
       return;
     }
 
@@ -219,6 +249,7 @@ export function OpportunityAttachments({
                 type="button"
                 onClick={() => void handleOpen(attachment)}
                 disabled={openingId === attachment.id}
+                title={`Visualizar ${attachment.file_name}`}
                 className="min-w-0 flex-1 text-left"
               >
                 <span className="block truncate text-sm font-medium text-graphite-800 underline-offset-2 hover:underline">
@@ -259,6 +290,17 @@ export function OpportunityAttachments({
           ))}
         </ul>
       )}
+
+      <PdfPreviewDialog
+        open={preview !== null}
+        fileName={preview?.attachment.file_name ?? ""}
+        url={preview?.url ?? null}
+        downloading={downloading}
+        onClose={() => setPreview(null)}
+        onDownload={
+          preview ? () => void handleDownload(preview.attachment) : undefined
+        }
+      />
     </section>
   );
 }

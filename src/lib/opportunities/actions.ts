@@ -506,12 +506,18 @@ async function discardObject(path: string) {
  * Link temporário para abrir um PDF.
  *
  * O bucket é privado e continua privado: o link é assinado na hora, com a
- * sessão do usuário, e expira em poucos minutos. Um usuário de loja só
+ * sessão do usuário, e expira em minutos. Um usuário de loja só
  * consegue assinar arquivos das próprias propostas, porque a policy
  * `proposal_pdfs_store_select` é avaliada nesta chamada.
  */
 export async function createAttachmentUrlAction(
   attachmentId: string,
+  /**
+   * `inline` devolve a URL sem `Content-Disposition: attachment`, que é o que
+   * permite ao navegador renderizar o PDF na própria página. `download` força
+   * o salvamento com o nome original.
+   */
+  mode: "inline" | "download" = "download",
 ): Promise<{ ok: boolean; url?: string; message?: string }> {
   const sessionError = await requireSession();
   if (sessionError) return { ok: false, message: sessionError };
@@ -528,11 +534,18 @@ export async function createAttachmentUrlAction(
     return { ok: false, message: "Arquivo não encontrado." };
   }
 
+  // A visualização vive mais que o clique de baixar: quem lê uma proposta na
+  // tela passa dos 5 minutos, e o visualizador do navegador volta ao arquivo
+  // conforme a pessoa navega pelas páginas.
+  const expiresIn = mode === "inline" ? 900 : 300;
+
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(attachment.storage_path, 300, {
-      download: attachment.file_name,
-    });
+    .createSignedUrl(
+      attachment.storage_path,
+      expiresIn,
+      mode === "download" ? { download: attachment.file_name } : undefined,
+    );
 
   if (error || !data?.signedUrl) {
     console.error("[projetos] falha ao assinar URL", error);

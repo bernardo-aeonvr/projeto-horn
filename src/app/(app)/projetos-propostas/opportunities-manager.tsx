@@ -22,6 +22,7 @@ import {
   type OpportunityDetails as OpportunityDetailsData,
   type OpportunityFilters,
   type OpportunityStatus,
+  type OpportunityStatusCounts,
   type OpportunityStore,
 } from "@/lib/opportunities/types";
 
@@ -48,6 +49,8 @@ type OpportunitiesManagerProps = {
   filters: OpportunityFilters;
   filteredCount: number;
   totalCount: number;
+  /** Contado no banco, no mesmo recorte da listagem — não sai desta página. */
+  statusCounts: OpportunityStatusCounts;
   page: number;
   pageCount: number;
   loadError: string | null;
@@ -71,6 +74,7 @@ export function OpportunitiesManager({
   filters,
   filteredCount,
   totalCount,
+  statusCounts,
   page,
   pageCount,
   loadError,
@@ -210,6 +214,7 @@ export function OpportunitiesManager({
           stores={allStores}
           professionalName={professionalName}
           resultCount={filteredCount}
+          statusCounts={statusCounts}
           onNewOpportunity={() => setPanel({ mode: "new" })}
         />
       ) : null}

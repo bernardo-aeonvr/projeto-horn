@@ -102,6 +102,25 @@ export const NEXT_STATUSES: Record<OpportunityStatus, OpportunityStatus[]> = {
   lost: [],
 };
 
+/**
+ * Quantos projetos existem em cada status dentro do recorte atual.
+ *
+ * Sempre traz os sete status do enum, inclusive os que a listagem não exibe em
+ * card. Nenhum status é somado dentro de outro: `proposal_received` continua
+ * separado de `proposal_sent_to_professional`.
+ */
+export type OpportunityStatusCounts = Record<OpportunityStatus, number>;
+
+export const EMPTY_STATUS_COUNTS: OpportunityStatusCounts = {
+  project_received: 0,
+  waiting_store_proposal: 0,
+  proposal_received: 0,
+  proposal_sent_to_professional: 0,
+  negotiating: 0,
+  closed: 0,
+  lost: 0,
+};
+
 /** Transições que pedem dados adicionais antes de gravar. */
 export function statusNeedsDetails(status: OpportunityStatus): boolean {
   return (

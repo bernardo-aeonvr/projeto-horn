@@ -12,6 +12,16 @@ export default function ProjetosLoading() {
           <div className="h-11 animate-pulse rounded-lg bg-graphite-100 sm:w-56" />
           <div className="h-11 animate-pulse rounded-lg bg-graphite-100 sm:w-44" />
         </div>
+
+        {/* Os seis cards de resumo do funil. */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-x-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-[4.75rem] animate-pulse rounded-card bg-graphite-100"
+            />
+          ))}
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-card border border-graphite-200 bg-white shadow-card">

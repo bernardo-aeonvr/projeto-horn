@@ -80,6 +80,7 @@ export default async function ProjetosPropostasPage({
         filters={filters}
         filteredCount={list.filteredCount}
         totalCount={list.totalCount}
+        statusCounts={list.statusCounts}
         page={list.page}
         pageCount={list.pageCount}
         loadError={list.error}
@@ -113,6 +114,7 @@ export default async function ProjetosPropostasPage({
       filters={filters}
       filteredCount={list.filteredCount}
       totalCount={list.totalCount}
+      statusCounts={list.statusCounts}
       page={list.page}
       pageCount={list.pageCount}
       loadError={list.error}

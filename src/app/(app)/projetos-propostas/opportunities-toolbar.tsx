@@ -11,9 +11,12 @@ import {
   OPPORTUNITY_STATUSES,
   STATUS_BADGE_LABELS,
   type OpportunityFilters,
+  type OpportunityStatusCounts,
   type OpportunityStore,
 } from "@/lib/opportunities/types";
 import { cn } from "@/lib/utils";
+
+import { StatusSummaryCards } from "./status-summary-cards";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -26,6 +29,8 @@ type OpportunitiesToolbarProps = {
   /** Nome do profissional filtrado, quando a tela foi aberta pela ficha dele. */
   professionalName: string | null;
   resultCount: number;
+  /** Distribuição por status dentro do mesmo recorte da listagem. */
+  statusCounts: OpportunityStatusCounts;
   onNewOpportunity: () => void;
 };
 
@@ -35,6 +40,7 @@ export function OpportunitiesToolbar({
   stores,
   professionalName,
   resultCount,
+  statusCounts,
   onNewOpportunity,
 }: OpportunitiesToolbarProps) {
   const router = useRouter();
@@ -268,6 +274,18 @@ export function OpportunitiesToolbar({
           </button>
         ) : null}
       </div>
+
+      {/*
+        O resumo fica entre os filtros e a listagem: ele descreve o mesmo
+        recorte que os controles acima produziram, e clicar num card é só
+        outro jeito de mexer no seletor de status ao lado.
+      */}
+      <StatusSummaryCards
+        counts={statusCounts}
+        selected={filters.status}
+        onSelect={(status) => applyFilters({ status, page: 1 })}
+        pending={pending}
+      />
     </div>
   );
 }

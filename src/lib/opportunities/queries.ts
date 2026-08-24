@@ -4,11 +4,14 @@ import { toNumber } from "@/lib/stores/format";
 import { createClient } from "@/lib/supabase/server";
 
 import {
+  EMPTY_STATUS_COUNTS,
   OPEN_STATUSES,
   OPPORTUNITY_COLUMNS,
+  OPPORTUNITY_STATUSES,
   PAGE_SIZE,
   type Opportunity,
   type OpportunityFilters,
+  type OpportunityStatusCounts,
   type OpportunityStatusEvent,
   type OpportunityStore,
   type ProposalAttachment,
@@ -133,6 +136,12 @@ export type OpportunityListResult = {
   filteredCount: number;
   /** Total sem filtro — separa "base vazia" de "busca sem resultado". */
   totalCount: number;
+  /**
+   * Quantos projetos cada status tem dentro do mesmo recorte da listagem,
+   * ignorando apenas o próprio filtro de status — senão o status escolhido
+   * zeraria todos os outros cards.
+   */
+  statusCounts: OpportunityStatusCounts;
   page: number;
   pageCount: number;
   error: string | null;
@@ -153,38 +162,29 @@ export async function listOpportunities(
 ): Promise<OpportunityListResult> {
   const supabase = await createClient();
 
-  let query = supabase
-    .from("opportunities")
-    .select(OPPORTUNITY_COLUMNS, { count: "exact" });
-
   const term = filters.q.trim();
-  if (term) {
-    const { professionalIds, storeIds } = await findMatchingIds(term);
-    const safeTerm = sanitizeForOrFilter(term);
+  const search = term ? await buildSearchConditions(term) : null;
 
-    const conditions: string[] = [];
-    if (safeTerm) conditions.push(`title.ilike.*${safeTerm}*`);
-    if (professionalIds.length > 0) {
-      conditions.push(`professional_id.in.(${professionalIds.join(",")})`);
-    }
-    if (storeIds.length > 0) {
-      conditions.push(`store_id.in.(${storeIds.join(",")})`);
-    }
-
-    // Nenhuma condição possível significa que nada pode casar.
-    if (conditions.length === 0) {
-      return {
-        opportunities: [],
-        filteredCount: 0,
-        totalCount: await countAll(),
-        page: filters.page,
-        pageCount: 1,
-        error: null,
-      };
-    }
-
-    query = query.or(conditions.join(","));
+  // Nenhuma condição possível significa que nada pode casar.
+  if (search !== null && search.length === 0) {
+    return {
+      opportunities: [],
+      filteredCount: 0,
+      totalCount: await countAll(),
+      statusCounts: EMPTY_STATUS_COUNTS,
+      page: filters.page,
+      pageCount: 1,
+      error: null,
+    };
   }
+
+  let query = applyScopeFilters(
+    supabase
+      .from("opportunities")
+      .select(OPPORTUNITY_COLUMNS, { count: "exact" }),
+    filters,
+    search,
+  );
 
   if (filters.status === "abertas") {
     query = query.in("status", OPEN_STATUSES);
@@ -192,29 +192,15 @@ export async function listOpportunities(
     query = query.eq("status", filters.status);
   }
 
-  if (filters.storeId) query = query.eq("store_id", filters.storeId);
-  if (filters.professionalId) {
-    query = query.eq("professional_id", filters.professionalId);
-  }
-
-  // O período recorta a criação do projeto — a data em que a demanda entrou.
-  // Os KPIs por transição de status virão do histórico, no dashboard.
-  const { from, to } = resolvePeriod(
-    filters.period as PeriodPreset,
-    filters.from,
-    filters.to,
-  );
-  if (from) query = query.gte("created_at", from);
-  if (to) query = query.lt("created_at", to);
-
   const offset = (filters.page - 1) * PAGE_SIZE;
 
-  const [listResponse, totalCount] = await Promise.all([
+  const [listResponse, totalCount, statusCounts] = await Promise.all([
     // Ordena pela última movimentação: o que andou recentemente vem primeiro.
     query
       .order("updated_at", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1),
     countAll(),
+    countByStatus(filters, search),
   ]);
 
   if (listResponse.error) {
@@ -223,6 +209,7 @@ export async function listOpportunities(
       opportunities: [],
       filteredCount: 0,
       totalCount: 0,
+      statusCounts: EMPTY_STATUS_COUNTS,
       page: filters.page,
       pageCount: 1,
       error:
@@ -237,10 +224,122 @@ export async function listOpportunities(
     opportunities: rows.map(toOpportunity),
     filteredCount,
     totalCount,
+    statusCounts,
     page: filters.page,
     pageCount: Math.max(1, Math.ceil(filteredCount / PAGE_SIZE)),
     error: null,
   };
+}
+
+/**
+ * Traduz o termo buscado nas condições de um `or(...)` do PostgREST.
+ *
+ * Lista vazia é resposta legítima: o termo não casa com nenhum profissional,
+ * loja nem título, então nada pode voltar.
+ */
+async function buildSearchConditions(term: string): Promise<string[]> {
+  const { professionalIds, storeIds } = await findMatchingIds(term);
+  const safeTerm = sanitizeForOrFilter(term);
+
+  const conditions: string[] = [];
+  if (safeTerm) conditions.push(`title.ilike.*${safeTerm}*`);
+  if (professionalIds.length > 0) {
+    conditions.push(`professional_id.in.(${professionalIds.join(",")})`);
+  }
+  if (storeIds.length > 0) {
+    conditions.push(`store_id.in.(${storeIds.join(",")})`);
+  }
+
+  return conditions;
+}
+
+/** O mínimo do construtor do PostgREST que os filtros compartilhados usam. */
+interface ScopedQuery {
+  or(filters: string): this;
+  eq(column: string, value: string): this;
+  gte(column: string, value: string): this;
+  lt(column: string, value: string): this;
+}
+
+/**
+ * Aplica busca, loja, profissional e período — tudo menos o status.
+ *
+ * É o recorte que a listagem e a contagem por status compartilham. O status
+ * fica de fora de propósito: os cards mostram a distribuição dentro do mesmo
+ * recorte, e aplicar ali o status escolhido zeraria todos os outros.
+ */
+function applyScopeFilters<T>(
+  query: T,
+  filters: OpportunityFilters,
+  search: string[] | null,
+): T {
+  /*
+    O construtor entra e sai pelo mesmo tipo, mas dentro daqui ele é visto
+    apenas como `ScopedQuery`. Amarrar o genérico à interface faria o
+    TypeScript tentar instanciar os tipos gerados do PostgREST a cada chamada,
+    o que estoura o limite de profundidade na consulta com embeds.
+  */
+  let scoped = query as ScopedQuery;
+
+  if (search !== null && search.length > 0) {
+    scoped = scoped.or(search.join(","));
+  }
+
+  if (filters.storeId) scoped = scoped.eq("store_id", filters.storeId);
+  if (filters.professionalId) {
+    scoped = scoped.eq("professional_id", filters.professionalId);
+  }
+
+  // O período recorta a criação do projeto — a data em que a demanda entrou.
+  // Os KPIs por transição de status virão do histórico, no dashboard.
+  const { from, to } = resolvePeriod(
+    filters.period as PeriodPreset,
+    filters.from,
+    filters.to,
+  );
+  if (from) scoped = scoped.gte("created_at", from);
+  if (to) scoped = scoped.lt("created_at", to);
+
+  return scoped as T;
+}
+
+/**
+ * Quantos projetos há em cada status dentro do recorte atual.
+ *
+ * Uma contagem `head` por status, em paralelo. O PostgREST não agrupa, e
+ * baixar todas as linhas só para somar aqui esbarraria no teto de linhas da
+ * API — e devolveria números errados em silêncio quando esbarrasse.
+ *
+ * As contagens rodam sem os embeds de profissional e loja da listagem. Isso
+ * não muda o resultado: as duas chaves são `not null`, então o join interno
+ * da listagem nunca derruba linha.
+ */
+async function countByStatus(
+  filters: OpportunityFilters,
+  search: string[] | null,
+): Promise<OpportunityStatusCounts> {
+  const supabase = await createClient();
+
+  const entries = await Promise.all(
+    OPPORTUNITY_STATUSES.map(async (status) => {
+      const { count, error } = await applyScopeFilters(
+        supabase
+          .from("opportunities")
+          .select("id", { count: "exact", head: true }),
+        filters,
+        search,
+      ).eq("status", status);
+
+      if (error) {
+        console.error("[projetos] falha ao contar status", status, error);
+        return [status, 0] as const;
+      }
+
+      return [status, count ?? 0] as const;
+    }),
+  );
+
+  return Object.fromEntries(entries) as OpportunityStatusCounts;
 }
 
 async function countAll(): Promise<number> {
@@ -295,15 +394,18 @@ export async function listStoreOpportunities(
     filters.to,
   );
 
-  const { data, error } = await supabase.rpc("get_store_opportunities_page", {
-    p_q: filters.q.trim() || null,
-    p_status: filters.status || null,
-    p_professional_id: filters.professionalId || null,
-    p_from: from || null,
-    p_to: to || null,
-    p_limit: PAGE_SIZE,
-    p_offset: (filters.page - 1) * PAGE_SIZE,
-  });
+  const [{ data, error }, statusCounts] = await Promise.all([
+    supabase.rpc("get_store_opportunities_page", {
+      p_q: filters.q.trim() || null,
+      p_status: filters.status || null,
+      p_professional_id: filters.professionalId || null,
+      p_from: from || null,
+      p_to: to || null,
+      p_limit: PAGE_SIZE,
+      p_offset: (filters.page - 1) * PAGE_SIZE,
+    }),
+    countStoreByStatus(filters),
+  ]);
 
   if (error) {
     console.error("[projetos] falha ao listar projetos da loja", error);
@@ -311,6 +413,7 @@ export async function listStoreOpportunities(
       opportunities: [],
       filteredCount: 0,
       totalCount: 0,
+      statusCounts: EMPTY_STATUS_COUNTS,
       page: filters.page,
       pageCount: 1,
       error:
@@ -363,10 +466,63 @@ export async function listStoreOpportunities(
     ),
     filteredCount,
     totalCount: Math.max(totalCount, filteredCount),
+    statusCounts,
     page: filters.page,
     pageCount: Math.max(1, Math.ceil(filteredCount / PAGE_SIZE)),
     error: null,
   };
+}
+
+/**
+ * Distribuição por status vista pelo usuário de loja.
+ *
+ * Não dá para contar direto na tabela como no caminho do admin: a busca por
+ * nome de profissional depende de `professionals`, que é admin-only por RLS.
+ * Então a contagem reusa a própria função da listagem, uma vez por status,
+ * pedindo só a primeira linha — `filtered_count` já vem calculado nela. Assim
+ * os cards e a lista nunca podem discordar: o filtro é literalmente o mesmo.
+ */
+async function countStoreByStatus(
+  filters: OpportunityFilters,
+): Promise<OpportunityStatusCounts> {
+  const supabase = await createClient();
+
+  const { from, to } = resolvePeriod(
+    filters.period as PeriodPreset,
+    filters.from,
+    filters.to,
+  );
+
+  const entries = await Promise.all(
+    OPPORTUNITY_STATUSES.map(async (status) => {
+      const { data, error } = await supabase.rpc(
+        "get_store_opportunities_page",
+        {
+          p_q: filters.q.trim() || null,
+          p_status: status,
+          p_professional_id: filters.professionalId || null,
+          p_from: from || null,
+          p_to: to || null,
+          // Uma linha basta: a contagem viaja repetida em todas elas.
+          p_limit: 1,
+          p_offset: 0,
+        },
+      );
+
+      if (error) {
+        console.error("[projetos] falha ao contar status da loja", status, error);
+        return [status, 0] as const;
+      }
+
+      const rows = (data as StoreOpportunityRow[] | null) ?? [];
+      // Sem linha nenhuma, não há o que contar naquele status.
+      const count = rows.length > 0 ? (toNumber(rows[0].filtered_count) ?? 0) : 0;
+
+      return [status, count] as const;
+    }),
+  );
+
+  return Object.fromEntries(entries) as OpportunityStatusCounts;
 }
 
 /** Total de projetos da própria loja, sem nenhum filtro. */

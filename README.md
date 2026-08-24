@@ -66,9 +66,14 @@ tabelas não existem lá.
 
    ```sql
    update public.user_profiles
-      set role = 'admin', store_id = null, is_active = true
+      set role = 'admin', store_id = null, is_active = true,
+          owner_id = id
     where id = '<AUTH_USER_UUID>';
    ```
+
+   `owner_id = id` não é opcional: desde a migration `0009` todo admin é dono
+   de si mesmo, e é desse campo que sai o recorte de dados dele. Um admin sem
+   `owner_id` entra no sistema e não enxerga nada.
 
 3. **Liberar as URLs de redirecionamento.** Em *Authentication → URL
    Configuration → Redirect URLs*, adicione:
@@ -80,9 +85,10 @@ tabelas não existem lá.
 
    Sem isso o link do e-mail de recuperação de senha não volta para a aplicação.
 
-Enquanto não houver linha em `user_profiles`, o usuário logado é tratado como
-`admin` pela interface (ver `src/lib/auth/session.ts`). O isolamento real entre
-lojas é feito por RLS no banco, não pela navegação.
+O isolamento real é feito por RLS no banco, não pela navegação. Sem linha em
+`user_profiles`, ou com o perfil inativo, o usuário não entra — `getAccessState`
+nega por padrão e manda para `/sem-acesso` com o motivo (ver
+`src/lib/auth/session.ts`).
 
 ## Estrutura
 
@@ -161,6 +167,37 @@ Configuration*):
 - **Redirect URLs** → acrescente `https://<dominio>/auth/callback` e, se quiser
   que a recuperação funcione nos previews, o padrão dos previews da Vercel
   (`https://*.vercel.app/**`).
+
+## Dois administradores, sem interseção
+
+O sistema comporta mais de um administrador operando em paralelo, cada um com
+carteira própria. Um não enxerga nada do outro: lojas, profissionais, contatos,
+projetos, propostas, PDFs, acessos de loja e todos os números do dashboard são
+recortados por dono.
+
+Quem carrega esse recorte é a coluna `owner_id`, em `stores`, `professionals`,
+`contacts`, `opportunities` e `user_profiles`. A aplicação nunca a envia: ela é
+preenchida por trigger a partir da sessão, e congelada depois — um registro não
+troca de dono por caminho nenhum.
+
+`public.current_owner_id()` responde qual é o recorte da sessão: o próprio id
+quando admin, o dono da loja quando usuário de loja. É por isso que o alcance
+"HORN inteira" que o dashboard da loja mostra continua fazendo sentido — ele
+para no administrador que representa aquela loja.
+
+Os catálogos `segments` e `regions` continuam compartilhados. São a taxonomia
+com que os dois classificam profissionais, semeada por SQL e sem tela de
+cadastro; nenhum dado de profissional, loja, contato ou proposta atravessa.
+
+**Para acrescentar mais um administrador**, crie a conta em *Authentication →
+Users* e rode o mesmo `update` do passo 2 da configuração do Supabase,
+inclusive o `owner_id = id`. A base dele começa vazia — que é o esperado.
+
+Ao mexer em policy ou em função `SECURITY DEFINER`, rode
+`npm run test:authz`: a seção *Isolamento entre administradores* cobre o
+cruzamento inteiro (`tests/README.md`). Função `SECURITY DEFINER` merece
+atenção redobrada, porque a RLS não se aplica dentro dela — o filtro por
+`owner_id` precisa estar escrito no corpo.
 
 ## Keep-alive do banco
 

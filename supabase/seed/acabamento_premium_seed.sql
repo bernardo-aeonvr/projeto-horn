@@ -72,8 +72,14 @@ insert into plano_acabamento values
 -- dias antes, com a loja apresentada nele (bloco 2). É o que faz a coluna
 -- "Alcançados" desta loja sair de zero no Dashboard Admin.
 
-insert into public.contacts (professional_id, contacted_at, channel, notes)
+-- O `owner_id` de cada linha é derivado do profissional: desde a migration 0009
+-- contato e oportunidade precisam ter o mesmo dono do profissional e da loja, e
+-- o trigger que preencheria a coluna sozinho a deriva da sessão — que não existe
+-- no SQL Editor.
+
+insert into public.contacts (owner_id, professional_id, contacted_at, channel, notes)
 select
+  pr.owner_id,
   pr.id,
   least(
     (
@@ -87,7 +93,7 @@ select
   'seed-acabamento'
 from plano_acabamento pl
 join (
-  select p.id, row_number() over (order by p.name) as n
+  select p.id, p.owner_id, row_number() over (order by p.name) as n
   from public.professionals p
   where p.is_active
 ) pr on pr.n = pl.n
@@ -114,10 +120,12 @@ on conflict (contact_id, store_id) do nothing;
 -- grava o padrão da loja no momento da criação, que é o comportamento real.
 
 insert into public.opportunities (
+  owner_id,
   professional_id, store_id, title, notes, status,
   proposal_initial_value, final_closed_value, loss_reason, created_at
 )
 select
+  pr.owner_id,
   pr.id,
   s.id,
   pl.titulo,
@@ -139,7 +147,7 @@ select
   )
 from plano_acabamento pl
 join (
-  select p.id, row_number() over (order by p.name) as n
+  select p.id, p.owner_id, row_number() over (order by p.name) as n
   from public.professionals p
   where p.is_active
 ) pr on pr.n = pl.n

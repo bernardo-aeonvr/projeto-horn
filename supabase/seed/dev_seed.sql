@@ -20,6 +20,18 @@
 begin;
 
 -- --------------------------------------------------------------------------
+-- DONO DOS DADOS SEMEADOS
+-- --------------------------------------------------------------------------
+-- Desde a migration 0009 cada linha tem um admin dono, e o trigger que
+-- preencheria `owner_id` sozinho o deriva da sessão — que não existe aqui: o
+-- seed roda no SQL Editor, sem `auth.uid()`. Sem a coluna preenchida à mão, o
+-- insert para com "Sem perfil ativo para determinar o dono do registro".
+--
+-- O dono escolhido é o admin mais antigo. Para semear a base de outro
+-- administrador, troque a subconsulta pelo UUID dele.
+-- --------------------------------------------------------------------------
+
+-- --------------------------------------------------------------------------
 -- LOJAS
 -- --------------------------------------------------------------------------
 with dados(nome, categoria, responsavel, telefone, ativa, mensal, comissao, inicio) as (
@@ -81,10 +93,17 @@ with dados(nome, categoria, responsavel, telefone, ativa, mensal, comissao, inic
     ('Adega Clima Perfeito',         'Área gourmet',          'Vera Lúcia Pontes',  '(11) 2344-5583', true,     null, 4.50, date '2025-11-06')
 )
 insert into public.stores (
+  owner_id,
   name, category, contact_name, phone, is_active,
   monthly_fixed_fee, default_commission_percent, start_date, notes
 )
-select d.nome, d.categoria, d.responsavel, d.telefone, d.ativa,
+select (select up.id
+          from public.user_profiles up
+         where up.role = 'admin'::public.app_role
+           and up.owner_id = up.id
+         order by up.created_at
+         limit 1),
+       d.nome, d.categoria, d.responsavel, d.telefone, d.ativa,
        d.mensal, d.comissao, d.inicio, 'seed'
   from dados d
  where not exists (select 1 from public.stores s where s.name = d.nome);
@@ -165,10 +184,17 @@ with dados(nome, seg, email, insta, fone, endereco, cep, cidade, uf, dia, mes, a
     ('Otávio Camargo Bellini',    'corretor',          null,                           '@otaviocamargo',   '(11) 99066-4471', null,                       null,        'Praia Grande',    'SP',   12,    8, true,  array['litoral'])
 )
 insert into public.professionals (
+  owner_id,
   name, segment_id, email, instagram, phone, address, postal_code,
   city, state, birthday_day, birthday_month, notes, is_active
 )
-select d.nome, s.id, d.email, d.insta, d.fone, d.endereco, d.cep,
+select (select up.id
+          from public.user_profiles up
+         where up.role = 'admin'::public.app_role
+           and up.owner_id = up.id
+         order by up.created_at
+         limit 1),
+       d.nome, s.id, d.email, d.insta, d.fone, d.endereco, d.cep,
        d.cidade, d.uf, d.dia::smallint, d.mes::smallint, 'seed', d.ativo
   from dados d
   join public.segments s on s.slug = d.seg

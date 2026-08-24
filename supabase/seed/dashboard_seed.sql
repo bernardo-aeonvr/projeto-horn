@@ -38,8 +38,14 @@ begin;
 -- de um. Assim "Profissionais contatados" e "Contatos realizados" nunca são
 -- o mesmo número.
 
-insert into public.contacts (professional_id, contacted_at, channel, notes)
+-- O `owner_id` de cada linha é derivado do profissional: desde a migration 0009
+-- contato e oportunidade precisam ter o mesmo dono do profissional e da loja, e
+-- o trigger que preencheria a coluna sozinho a deriva da sessão — que não existe
+-- no SQL Editor.
+
+insert into public.contacts (owner_id, professional_id, contacted_at, channel, notes)
 select
+  (select pp.owner_id from public.professionals pp where pp.id = b.professional_id),
   b.professional_id,
   -- Espalha pelos últimos ~5 meses, sempre em horário comercial local.
   (
@@ -94,10 +100,12 @@ on conflict (contact_id, store_id) do nothing;
 -- naquele momento, e não recalculado depois: é o percentual histórico.
 
 insert into public.opportunities (
+  owner_id,
   professional_id, store_id, title, notes, status,
   proposal_initial_value, final_closed_value, commission_percent, created_at
 )
 select
+  (select pp.owner_id from public.professionals pp where pp.id = d.professional_id),
   d.professional_id,
   d.store_id,
   d.titulo,

@@ -16,8 +16,9 @@ import type { StoreAccessFormState, StoreAccessResult } from "./types";
  *
  *  - criar a conta em `auth.users` e trocar senha exigem credencial
  *    privilegiada, e são as únicas coisas feitas pelo cliente administrativo;
- *  - definir papel, loja e status é feito com a sessão do próprio admin, então
- *    a policy `user_profiles_admin_update` continua sendo a autorização real.
+ *  - definir papel, loja e status é feito com a sessão do próprio admin, pela
+ *    RPC `claim_store_user`, que confere no banco se a loja é de quem chama.
+ *    A autorização continua sendo do banco, não deste arquivo.
  *
  * A senha provisória existe em texto em um único ponto: o retorno da ação, que
  * o administrador lê uma vez e entrega à loja. Ela não é gravada em tabela
@@ -173,22 +174,23 @@ export async function provisionStoreAccessAction(
   }
 
   /*
-    O trigger `handle_new_auth_user` já criou o perfil como loja inativa e sem
-    vínculo. Ativar e associar é feito com a sessão do admin, para que a policy
-    `user_profiles_admin_update` seja a autorização de verdade.
-  */
-  const { data: profile, error: profileError } = await supabase
-    .from("user_profiles")
-    .update({
-      full_name: fullName || store.name,
-      role: "store",
-      store_id: storeId,
-      is_active: true,
-    })
-    .eq("id", userId)
-    .select("id");
+    O trigger `handle_new_auth_user` já criou o perfil, mas ele nasce sem dono:
+    quem cria a conta é a chave secreta, e dentro do trigger não existe
+    `auth.uid()` de onde derivar um. Um perfil sem dono é invisível para todo
+    admin — é isso que impede um administrador de adotar o acesso que o outro
+    acabou de provisionar.
 
-  if (profileError || !profile || profile.length === 0) {
+    `claim_store_user` é o caminho legítimo dessa adoção. Ela roda com a sessão
+    do admin, confere que a loja é dele e reivindica o perfil num UPDATE
+    atômico, então continua sendo o banco quem autoriza — não este arquivo.
+  */
+  const { error: profileError } = await supabase.rpc("claim_store_user", {
+    p_user_id: userId,
+    p_store_id: storeId,
+    p_full_name: fullName || store.name,
+  });
+
+  if (profileError) {
     // Sem perfil configurado a conta não serve para nada e ainda ocuparia o
     // e-mail. Desfaz para o administrador poder tentar de novo.
     await admin.auth.admin.deleteUser(userId);
@@ -235,6 +237,11 @@ export async function resetStoreAccessPasswordAction(
 
   // Confere pela sessão do admin que o alvo é mesmo um acesso de loja: o
   // cliente administrativo ignora RLS, então a validação precisa vir antes.
+  //
+  // A mesma leitura resolve o isolamento entre administradores: a policy de
+  // `user_profiles` só devolve os perfis do próprio admin, então o acesso de
+  // uma loja do outro não é encontrado aqui e nunca chega a ter a senha
+  // trocada pela chave secreta.
   const { data: profile } = await supabase
     .from("user_profiles")
     .select("id, role, store_id")

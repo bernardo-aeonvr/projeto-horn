@@ -1,6 +1,7 @@
 # Testes de autorização
 
-Provam que o isolamento entre lojas acontece **no banco**, não na interface.
+Provam que os dois isolamentos do sistema acontecem **no banco**, não na
+interface: entre as lojas representadas, e entre os dois administradores.
 
 Cada caso fala direto com PostgREST e com a API de Storage usando o JWT de uma
 sessão real, do mesmo jeito que o navegador do usuário faria. Nenhum teste
@@ -33,14 +34,23 @@ segurança — a lista de falhas sai no fim.
 
 ## O que os fixtures criam
 
-| Objeto | Para quê |
-| --- | --- |
-| `SEC_TEST Loja A` / `SEC_TEST Loja B` | os dois lados do teste cruzado |
-| 3 usuários `sec-test-*@example.com` | loja A, loja B e um admin |
-| `SEC_TEST Profissional` | com telefone, e-mail, endereço e observação interna, para detectar vazamento de PII |
-| 1 contato apresentando **as duas lojas** | base do teste de `contact_stores` |
-| 1 oportunidade fechada por loja | valores e comissões diferentes, para detectar mistura |
-| 1 PDF por loja no bucket `proposal-pdfs` | teste de Storage e de URL assinada |
+Duas carteiras completas e independentes, uma por administrador.
+
+| Objeto | Dono | Para quê |
+| --- | --- | --- |
+| `SEC_TEST Loja A` / `SEC_TEST Loja B` | Admin 1 | os dois lados do teste cruzado entre lojas |
+| `SEC_TEST Loja C` | Admin 2 | o outro lado do teste cruzado entre admins |
+| 5 usuários `sec-test-*@example.com` | — | lojas A, B e C, e os dois admins |
+| `SEC_TEST Profissional` | Admin 1 | com telefone, e-mail, endereço e observação interna, para detectar vazamento de PII |
+| `SEC_TEST Profissional Admin 2` | Admin 2 | a carteira que o primeiro admin não pode alcançar |
+| 1 contato apresentando **as duas lojas** | Admin 1 | base do teste de `contact_stores` |
+| 1 contato | Admin 2 | prova que o alcance mostrado à loja é o do dono dela |
+| 1 oportunidade fechada por loja | ambos | comissões de 10%, 20% e 30%, para detectar mistura em qualquer soma |
+| 1 PDF por loja no bucket `proposal-pdfs` | ambos | teste de Storage e de URL assinada |
+
+Os fixtures preenchem `owner_id` à mão em cada insert. Não é redundância: os
+triggers `a_*_set_owner` derivam o dono da sessão, e a service role não tem
+uma — sem a coluna preenchida, o setup nem chega a criar os dados.
 
 ## O que é coberto
 
@@ -59,6 +69,14 @@ segurança — a lista de falhas sai no fim.
   `role: admin` no `user_metadata` do Auth.
 - **Storage** — URL assinada, download direto, path forjado, listagem, upload,
   exclusão, `move` e `copy` entre lojas.
+- **Isolamento entre administradores** — o cruzamento completo entre os dois
+  admins: IDOR por id direto, varredura de tabela, escrita no dado alheio,
+  criação de oportunidade cruzando profissional e loja de donos diferentes,
+  transferência de dono, sequestro de acesso de loja, todas as RPCs de
+  dashboard, o painel de acessos e os PDFs no Storage. Inclui o caso mais
+  fácil de deixar passar: o alcance "HORN inteira" que o dashboard da loja
+  mostra (migration 0005) precisa parar no dono daquela loja — senão vaza pela
+  porta da loja, sem ninguém ser admin.
 - **Regressão do Admin** — todas as leituras, RPCs, escrita e upload que o
   administrador precisa continuar fazendo.
 - **Anônimo** — nenhuma tabela responde sem sessão.
@@ -66,5 +84,11 @@ segurança — a lista de falhas sai no fim.
 ## Ao adicionar tabela, policy ou RPC
 
 Acrescente aqui o caso correspondente, sempre nos dois sentidos: o que o dono
-do dado **pode** e o que a outra loja **não pode**. Um teste que só verifica o
-caminho feliz não detecta vazamento.
+do dado **pode** e o que o outro lado **não pode** — e "o outro lado" agora são
+dois: a outra loja e o outro administrador. Um teste que só verifica o caminho
+feliz não detecta vazamento.
+
+Atenção especial a função `SECURITY DEFINER` nova: ela roda como dona das
+tabelas e a RLS não se aplica por dentro, então o recorte por `owner_id`
+precisa estar escrito no corpo dela. É o tipo de esquecimento que passa em
+todos os testes de loja e vaza a operação inteira para o outro admin.

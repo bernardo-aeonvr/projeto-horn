@@ -27,6 +27,11 @@ export const USERS = {
   storeA: { email: "sec-test-loja-a@example.com", password: "SecTestA!2026#horn" },
   storeB: { email: "sec-test-loja-b@example.com", password: "SecTestB!2026#horn" },
   admin: { email: "sec-test-admin@example.com", password: "SecTestAdmin!2026#horn" },
+  // Segundo administrador, com carteira própria. Existe para provar o
+  // isolamento da migration 0009: nada do admin acima pode alcançá-lo, e
+  // vice-versa.
+  admin2: { email: "sec-test-admin-2@example.com", password: "SecTestAdmin2!2026#horn" },
+  storeC: { email: "sec-test-loja-c@example.com", password: "SecTestC!2026#horn" },
 };
 
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
@@ -86,27 +91,54 @@ async function setup() {
   const userA = await ensureUser(USERS.storeA);
   const userB = await ensureUser(USERS.storeB);
   const admin = await ensureUser(USERS.admin);
+  const admin2 = await ensureUser(USERS.admin2);
+  const userC = await ensureUser(USERS.storeC);
 
   await teardownData(); // idempotente: limpa restos de uma execução anterior
 
+  /*
+    `owner_id` vai explícito em cada insert.
+
+    Não é redundância: o trigger `a_*_set_owner` deriva o dono de
+    `current_owner_id()`, e aqui não existe sessão — quem escreve é a service
+    role, para quem `auth.uid()` é nulo. Sem a coluna preenchida à mão, o
+    trigger levanta "Sem perfil ativo para determinar o dono do registro" e as
+    fixtures nem chegam a ser criadas.
+
+    Loja A, Loja B e o profissional pertencem ao primeiro admin. Loja C e o
+    segundo profissional pertencem ao segundo — é esse par que os testes de
+    isolamento entre admins exercitam.
+  */
   const [f] = await adminSql(`
     with loja_a as (
-      insert into public.stores (name, category, is_active, default_commission_percent, notes)
-      values ('SEC_TEST Loja A', 'SEC_TEST', true, 10.00, 'Fixture de teste de autorizacao')
+      insert into public.stores (owner_id, name, category, is_active, default_commission_percent, notes)
+      values (${q(admin)}, 'SEC_TEST Loja A', 'SEC_TEST', true, 10.00, 'Fixture de teste de autorizacao')
       returning id
     ),
     loja_b as (
-      insert into public.stores (name, category, is_active, default_commission_percent, notes)
-      values ('SEC_TEST Loja B', 'SEC_TEST', true, 20.00, 'Fixture de teste de autorizacao')
+      insert into public.stores (owner_id, name, category, is_active, default_commission_percent, notes)
+      values (${q(admin)}, 'SEC_TEST Loja B', 'SEC_TEST', true, 20.00, 'Fixture de teste de autorizacao')
+      returning id
+    ),
+    loja_c as (
+      insert into public.stores (owner_id, name, category, is_active, default_commission_percent, notes)
+      values (${q(admin2)}, 'SEC_TEST Loja C', 'SEC_TEST', true, 30.00, 'Fixture do segundo admin')
       returning id
     ),
     seg as (select id from public.segments order by sort_order limit 1),
     reg as (select id from public.regions order by sort_order limit 1),
     prof as (
-      insert into public.professionals (name, segment_id, email, phone, instagram, address, notes, is_active)
-      values ('SEC_TEST Profissional', (select id from seg),
+      insert into public.professionals (owner_id, name, segment_id, email, phone, instagram, address, notes, is_active)
+      values (${q(admin)}, 'SEC_TEST Profissional', (select id from seg),
               'sec-test-prof@example.com', '11999990000', '@sectestprof',
               'Rua Secreta 123 - SEC_TEST', 'OBSERVACAO INTERNA SIGILOSA SEC_TEST', true)
+      returning id
+    ),
+    prof2 as (
+      insert into public.professionals (owner_id, name, segment_id, email, phone, instagram, address, notes, is_active)
+      values (${q(admin2)}, 'SEC_TEST Profissional Admin 2', (select id from seg),
+              'sec-test-prof2@example.com', '11988880000', '@sectestprof2',
+              'Rua Reservada 456 - SEC_TEST', 'CARTEIRA DO SEGUNDO ADMIN SEC_TEST', true)
       returning id
     ),
     profreg as (
@@ -115,9 +147,15 @@ async function setup() {
     ),
     -- Contato que apresentou AS DUAS lojas: base do teste de contact_stores.
     ct as (
-      insert into public.contacts (professional_id, contacted_at, channel, notes)
-      values ((select id from prof), now() - interval '2 days', 'whatsapp',
+      insert into public.contacts (owner_id, professional_id, contacted_at, channel, notes)
+      values (${q(admin)}, (select id from prof), now() - interval '2 days', 'whatsapp',
               'SEC_TEST contato interno da HORN')
+      returning id
+    ),
+    ct2 as (
+      insert into public.contacts (owner_id, professional_id, contacted_at, channel, notes)
+      values (${q(admin2)}, (select id from prof2), now() - interval '1 day', 'phone',
+              'SEC_TEST contato do segundo admin')
       returning id
     ),
     cs as (
@@ -126,38 +164,65 @@ async function setup() {
         select (select id from loja_a) as x union all select (select id from loja_b)
       ) t returning contact_id
     ),
+    cs2 as (
+      insert into public.contact_stores (contact_id, store_id)
+      select (select id from ct2), (select id from loja_c) returning contact_id
+    ),
     opp_a as (
-      insert into public.opportunities (professional_id, store_id, title, notes, status,
+      insert into public.opportunities (owner_id, professional_id, store_id, title, notes, status,
                                         proposal_initial_value, final_closed_value, commission_percent)
-      values ((select id from prof), (select id from loja_a),
+      values (${q(admin)}, (select id from prof), (select id from loja_a),
               'SEC_TEST Projeto da Loja A', 'NOTA INTERNA A', 'closed', 11111.11, 10000.00, 10.00)
       returning id
     ),
     opp_b as (
-      insert into public.opportunities (professional_id, store_id, title, notes, status,
+      insert into public.opportunities (owner_id, professional_id, store_id, title, notes, status,
                                         proposal_initial_value, final_closed_value, commission_percent)
-      values ((select id from prof), (select id from loja_b),
+      values (${q(admin)}, (select id from prof), (select id from loja_b),
               'SEC_TEST Projeto da Loja B', 'NOTA INTERNA B', 'closed', 22222.22, 20000.00, 20.00)
+      returning id
+    ),
+    opp_c as (
+      insert into public.opportunities (owner_id, professional_id, store_id, title, notes, status,
+                                        proposal_initial_value, final_closed_value, commission_percent)
+      values (${q(admin2)}, (select id from prof2), (select id from loja_c),
+              'SEC_TEST Projeto da Loja C', 'NOTA INTERNA C', 'closed', 33333.33, 30000.00, 30.00)
       returning id
     )
     select (select id from loja_a) as store_a, (select id from loja_b) as store_b,
-           (select id from prof) as professional, (select id from ct) as contact,
-           (select id from opp_a) as opp_a, (select id from opp_b) as opp_b;
+           (select id from loja_c) as store_c,
+           (select id from prof) as professional, (select id from prof2) as professional2,
+           (select id from ct) as contact, (select id from ct2) as contact2,
+           (select id from opp_a) as opp_a, (select id from opp_b) as opp_b,
+           (select id from opp_c) as opp_c;
   `);
 
+  // `owner_id` também vai à mão nos perfis: o trigger `user_profiles_guard_owner`
+  // exige que um admin seja dono de si mesmo e que um acesso de loja pertença ao
+  // dono da loja.
   await adminSql(`
     update public.user_profiles set role='store', store_id=${q(f.store_a)}, is_active=true,
-      full_name='SEC_TEST Usuario Loja A', must_change_password=false where id=${q(userA)};
+      owner_id=${q(admin)}, full_name='SEC_TEST Usuario Loja A',
+      must_change_password=false where id=${q(userA)};
     update public.user_profiles set role='store', store_id=${q(f.store_b)}, is_active=true,
-      full_name='SEC_TEST Usuario Loja B', must_change_password=false where id=${q(userB)};
+      owner_id=${q(admin)}, full_name='SEC_TEST Usuario Loja B',
+      must_change_password=false where id=${q(userB)};
+    update public.user_profiles set role='store', store_id=${q(f.store_c)}, is_active=true,
+      owner_id=${q(admin2)}, full_name='SEC_TEST Usuario Loja C',
+      must_change_password=false where id=${q(userC)};
     update public.user_profiles set role='admin', store_id=null, is_active=true,
-      full_name='SEC_TEST Usuario Admin', must_change_password=false where id=${q(admin)};
+      owner_id=${q(admin)}, full_name='SEC_TEST Usuario Admin',
+      must_change_password=false where id=${q(admin)};
+    update public.user_profiles set role='admin', store_id=null, is_active=true,
+      owner_id=${q(admin2)}, full_name='SEC_TEST Usuario Admin 2',
+      must_change_password=false where id=${q(admin2)};
   `);
 
   const pdfA = `${f.store_a}/${f.opp_a}/sec-test-loja-a.pdf`;
   const pdfB = `${f.store_b}/${f.opp_b}/sec-test-loja-b.pdf`;
+  const pdfC = `${f.store_c}/${f.opp_c}/sec-test-loja-c.pdf`;
 
-  for (const [label, p] of [["A", pdfA], ["B", pdfB]]) {
+  for (const [label, p] of [["A", pdfA], ["B", pdfB], ["C", pdfC]]) {
     await fetch(`${SUPABASE_URL}/storage/v1/object/proposal-pdfs/${p}`, {
       method: "POST",
       headers: {
@@ -171,30 +236,37 @@ async function setup() {
   await adminSql(`
     insert into public.proposal_attachments (opportunity_id, storage_path, file_name, mime_type, size_bytes)
     values (${q(f.opp_a)}, ${q(pdfA)}, 'sec-test-loja-a.pdf', 'application/pdf', 200),
-           (${q(f.opp_b)}, ${q(pdfB)}, 'sec-test-loja-b.pdf', 'application/pdf', 200);
+           (${q(f.opp_b)}, ${q(pdfB)}, 'sec-test-loja-b.pdf', 'application/pdf', 200),
+           (${q(f.opp_c)}, ${q(pdfC)}, 'sec-test-loja-c.pdf', 'application/pdf', 200);
   `);
 
   const att = await adminSql(`
     select id, opportunity_id from public.proposal_attachments
-    where storage_path in (${q(pdfA)}, ${q(pdfB)});
+    where storage_path in (${q(pdfA)}, ${q(pdfB)}, ${q(pdfC)});
   `);
 
   const manifest = {
     userA: { id: userA, ...USERS.storeA },
     userB: { id: userB, ...USERS.storeB },
+    userC: { id: userC, ...USERS.storeC },
     admin: { id: admin, ...USERS.admin },
-    storeA: f.store_a, storeB: f.store_b,
-    professional: f.professional, contact: f.contact,
-    oppA: f.opp_a, oppB: f.opp_b,
-    pdfA, pdfB,
+    admin2: { id: admin2, ...USERS.admin2 },
+    storeA: f.store_a, storeB: f.store_b, storeC: f.store_c,
+    professional: f.professional, professional2: f.professional2,
+    contact: f.contact, contact2: f.contact2,
+    oppA: f.opp_a, oppB: f.opp_b, oppC: f.opp_c,
+    pdfA, pdfB, pdfC,
     attachmentA: att.find((a) => a.opportunity_id === f.opp_a)?.id,
     attachmentB: att.find((a) => a.opportunity_id === f.opp_b)?.id,
+    attachmentC: att.find((a) => a.opportunity_id === f.opp_c)?.id,
   };
 
   writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2));
   console.log(`Fixtures prontos. Manifesto em tests/fixtures.json`);
-  console.log("  SEC_TEST Loja A / Loja B, 1 profissional, 1 contato com as duas lojas,");
-  console.log("  1 oportunidade por loja, 1 PDF por loja, 3 usuários SEC_TEST.");
+  console.log("  Admin 1: Loja A / Loja B, 1 profissional, 1 contato com as duas lojas,");
+  console.log("  1 oportunidade e 1 PDF por loja.");
+  console.log("  Admin 2: Loja C, 1 profissional, 1 contato, 1 oportunidade, 1 PDF.");
+  console.log("  5 usuários SEC_TEST (3 lojas, 2 admins).");
 }
 
 /** Remove só os dados SEC_TEST. Nunca toca em registro real. */
@@ -250,8 +322,15 @@ async function teardown() {
   const list = await authAdmin("/auth/v1/admin/users?per_page=200");
   const emails = new Set(Object.values(USERS).map((u) => u.email));
   for (const u of list.body.users ?? []) {
-    if (emails.has(u.email)) {
-      await authAdmin(`/auth/v1/admin/users/${u.id}`, { method: "DELETE" });
+    if (!emails.has(u.email)) continue;
+
+    // O status é conferido: uma exclusão recusada por chave estrangeira deixa a
+    // conta e o perfil para trás, e anunciar "removido" sem olhar a resposta
+    // esconderia justamente o resto que o próximo setup vai tropeçar.
+    const r = await authAdmin(`/auth/v1/admin/users/${u.id}`, { method: "DELETE" });
+    if (r.status >= 300) {
+      console.error(`  FALHA ao remover ${u.email}: ${r.status} ${JSON.stringify(r.body)}`);
+    } else {
       console.log(`  usuário removido: ${u.email}`);
     }
   }

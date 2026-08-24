@@ -26,9 +26,11 @@ require_("NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
 
 const F = loadManifest();
 
-const A = await signIn(F.userA);      // usuário da Loja A
-const B = await signIn(F.userB);      // usuário da Loja B
+const A = await signIn(F.userA);      // usuário da Loja A   (carteira do Admin 1)
+const B = await signIn(F.userB);      // usuário da Loja B   (carteira do Admin 1)
+const C = await signIn(F.userC);      // usuário da Loja C   (carteira do Admin 2)
 const ADM = await signIn(F.admin);    // administrador HORN
+const ADM2 = await signIn(F.admin2);  // segundo administrador, carteira própria
 const ANON = null;                    // sem sessão
 
 // ---------------------------------------------------------------------------
@@ -396,6 +398,194 @@ for (const [label, p] of [["o próprio PDF", F.pdfA], ["o PDF da Loja B", F.pdfB
                            destinationKey: `${F.storeA}/${F.oppA}/copia.pdf` }),
   });
   expect("storage", "Loja A copia o PDF da Loja B", "deny", r.status < 300, brief(r));
+}
+
+// ---------------------------------------------------------------------------
+section("Isolamento entre administradores (migration 0009)");
+// ---------------------------------------------------------------------------
+/*
+  Até a 0009, `is_admin()` era a autorização inteira: qualquer admin via a
+  operação toda. Agora cada linha tem dono, e "é admin" só vale para o que é
+  dele.
+
+  ADM é dono da Loja A, da Loja B e do profissional; ADM2 é dono da Loja C e do
+  segundo profissional. Nenhum dos dois pode alcançar nada do outro — nem lendo,
+  nem escrevendo, nem por RPC, nem pelo Storage, nem pela porta da loja.
+*/
+for (const [label, path] of [
+  ["a loja", `stores?id=eq.${F.storeC}&select=*`],
+  ["o profissional", `professionals?id=eq.${F.professional2}&select=*`],
+  ["o contato", `contacts?id=eq.${F.contact2}&select=*`],
+  ["a oportunidade", `opportunities?id=eq.${F.oppC}&select=*`],
+  ["o anexo", `proposal_attachments?opportunity_id=eq.${F.oppC}&select=*`],
+]) {
+  const r = await rest(ADM, "GET", path);
+  expect("admins", `Admin 1 lê ${label} do Admin 2 pelo id (IDOR)`, "deny", readAllowed(r), brief(r));
+}
+for (const [label, path] of [
+  ["a loja", `stores?id=eq.${F.storeA}&select=*`],
+  ["o profissional", `professionals?id=eq.${F.professional}&select=*`],
+  ["a oportunidade", `opportunities?id=eq.${F.oppA}&select=*`],
+]) {
+  const r = await rest(ADM2, "GET", path);
+  expect("admins", `Admin 2 lê ${label} do Admin 1 pelo id (IDOR)`, "deny", readAllowed(r), brief(r));
+}
+{
+  const r = await rest(ADM, "GET", "stores?select=id&limit=1000");
+  const rows = Array.isArray(r.body) ? r.body : [];
+  expect("admins", "Admin 1 varre stores e alcança a loja do Admin 2", "deny",
+    rows.some((s) => s.id === F.storeC), `${rows.length} loja(s)`);
+}
+{
+  const r = await rest(ADM2, "GET", "professionals?select=id,name,notes&limit=1000");
+  const rows = Array.isArray(r.body) ? r.body : [];
+  expect("admins", "Admin 2 varre a carteira e alcança o profissional do Admin 1", "deny",
+    rows.some((p) => p.id === F.professional), `${rows.length} profissional(is)`);
+  expect("admins", "Admin 2 enxerga as observações internas do Admin 1", "deny",
+    JSON.stringify(rows).includes("OBSERVACAO INTERNA SIGILOSA"));
+}
+
+// Escrita: ler é metade do problema; escrever no dado do outro é a outra.
+{
+  const r = await rest(ADM, "PATCH", `stores?id=eq.${F.storeC}`, { name: "INVADIDA" }, repr);
+  expect("admins", "Admin 1 edita a loja do Admin 2", "deny", writeAllowed(r), brief(r));
+}
+{
+  const r = await rest(ADM, "PATCH", `professionals?id=eq.${F.professional2}`, { name: "INVADIDO" }, repr);
+  expect("admins", "Admin 1 edita o profissional do Admin 2", "deny", writeAllowed(r), brief(r));
+}
+{
+  const r = await rest(ADM, "DELETE", `opportunities?id=eq.${F.oppC}`, undefined, repr);
+  expect("admins", "Admin 1 exclui a oportunidade do Admin 2", "deny", writeAllowed(r), brief(r));
+}
+{
+  // A FK aceitaria: os dois ids existem. Quem barra é o trigger de coerência.
+  const r = await rest(ADM, "POST", "opportunities",
+    { professional_id: F.professional, store_id: F.storeC, title: "SEC_TEST cruzada" }, repr);
+  expect("admins", "Admin 1 cria oportunidade na loja do Admin 2", "deny", writeAllowed(r), brief(r));
+}
+{
+  const r = await rest(ADM, "POST", "opportunities",
+    { professional_id: F.professional2, store_id: F.storeA, title: "SEC_TEST cruzada 2" }, repr);
+  expect("admins", "Admin 1 cria oportunidade com o profissional do Admin 2", "deny",
+    writeAllowed(r), brief(r));
+}
+{
+  const r = await rest(ADM, "POST", "contact_stores",
+    { contact_id: F.contact, store_id: F.storeC }, repr);
+  expect("admins", "Admin 1 apresenta a loja do Admin 2 no próprio contato", "deny",
+    writeAllowed(r), brief(r));
+}
+{
+  const r = await rest(ADM, "POST", "stores",
+    { name: "SEC_TEST Loja plantada", owner_id: F.admin2.id, is_active: true }, repr);
+  expect("admins", "Admin 1 cria loja já no nome do Admin 2", "deny", writeAllowed(r), brief(r));
+}
+{
+  const r = await rest(ADM, "PATCH", `stores?id=eq.${F.storeA}`, { owner_id: F.admin2.id }, repr);
+  expect("admins", "Admin 1 transfere a própria loja para o Admin 2", "deny", writeAllowed(r), brief(r));
+}
+{
+  const r = await rest(ADM2, "PATCH", `user_profiles?id=eq.${F.userA.id}`,
+    { store_id: F.storeC }, repr);
+  expect("admins", "Admin 2 sequestra o acesso de loja do Admin 1", "deny", writeAllowed(r), brief(r));
+}
+
+// RPCs: são SECURITY DEFINER e ignoram RLS por dentro — o recorte por dono
+// precisa estar no corpo de cada uma. É aqui que um esquecimento apareceria.
+{
+  const r = await rpc(ADM, "get_store_reach_breakdown", { p_store_id: F.storeC });
+  expect("admins", "Admin 1 pede o breakdown da loja do Admin 2", "deny",
+    r.status < 300 && Array.isArray(r.body) && r.body.length > 0, brief(r));
+}
+{
+  const r = await rpc(ADM, "get_admin_dashboard_metrics", {});
+  const row = Array.isArray(r.body) ? r.body[0] : null;
+  // A + B = 1.000 + 4.000 = 5.000. A comissão da Loja C (9.000) não pode entrar.
+  expect("admins", "KPIs do Admin 1 somam a comissão do Admin 2", "deny",
+    Number(row?.total_commission_value ?? 0) >= 9000,
+    `comissão vista pelo Admin 1 = ${row?.total_commission_value}`);
+}
+{
+  const r = await rpc(ADM2, "get_admin_dashboard_metrics", {});
+  const row = Array.isArray(r.body) ? r.body[0] : null;
+  expect("admins", "KPIs do Admin 2 trazem só a comissão dele (9.000)", "allow",
+    Number(row?.total_commission_value ?? 0) === 9000,
+    `comissão vista pelo Admin 2 = ${row?.total_commission_value}`);
+}
+{
+  const r = await rpc(ADM2, "get_admin_store_results", {});
+  const rows = Array.isArray(r.body) ? r.body : [];
+  expect("admins", "Resultados por loja do Admin 2 listam lojas do Admin 1", "deny",
+    rows.some((s) => s.store_id === F.storeA || s.store_id === F.storeB),
+    `${rows.length} loja(s)`);
+}
+{
+  const r = await rpc(ADM2, "get_admin_portfolio_totals", {});
+  const row = Array.isArray(r.body) ? r.body[0] : null;
+  expect("admins", "Carteira do Admin 2 conta profissional do Admin 1", "deny",
+    Number(row?.professionals_total ?? 0) > 1,
+    `${row?.professionals_total} profissional(is), ${row?.stores_total} loja(s)`);
+}
+{
+  const r = await rpc(ADM, "get_store_access_summary", {});
+  const rows = Array.isArray(r.body) ? r.body : [];
+  expect("admins", "Painel de acessos do Admin 1 mostra o acesso do Admin 2", "deny",
+    rows.some((a) => a.store_id === F.storeC || a.user_id === F.userC.id),
+    `${rows.length} acesso(s)`);
+}
+{
+  const r = await rpc(ADM, "get_horn_reach_breakdown", {});
+  expect("admins", "get_horn_reach_breakdown responde para o Admin 1", "allow", r.status < 300, brief(r));
+}
+
+/*
+  O caso mais fácil de deixar passar. A decisão de 17/08 (migration 0005) manda
+  mostrar à loja o alcance completo do trabalho da HORN, e não só os contatos em
+  que ela foi marcada. Sem recorte por dono, essa mesma regra entregaria à loja
+  de um admin o trabalho do outro — pela porta da loja, sem ninguém ser admin.
+*/
+{
+  const r = await rpc(C, "get_store_contact_reach", {});
+  const rows = Array.isArray(r.body) ? r.body : [];
+  expect("admins", "Loja C vê no alcance o profissional do Admin 1", "deny",
+    rows.some((x) => x.professional_id === F.professional),
+    `${rows.length} contato(s) no alcance`);
+}
+{
+  const r = await rpc(A, "get_store_contact_reach", {});
+  const rows = Array.isArray(r.body) ? r.body : [];
+  expect("admins", "Loja A vê no alcance o profissional do Admin 2", "deny",
+    rows.some((x) => x.professional_id === F.professional2),
+    `${rows.length} contato(s) no alcance`);
+}
+{
+  const r = await rpc(C, "get_store_dashboard_metrics", {});
+  const row = Array.isArray(r.body) ? r.body[0] : null;
+  expect("admins", "Alcance da Loja C conta os contatos do Admin 1", "deny",
+    Number(row?.professionals_contacted ?? 0) > 1,
+    `${row?.professionals_contacted} profissional(is) contatado(s)`);
+}
+
+// Storage: o PDF é o dado mais sensível, e a policy dele lê a loja da pasta.
+{
+  const r = await storage(ADM, "GET", `object/proposal-pdfs/${F.pdfC}`);
+  expect("admins", "Admin 1 baixa o PDF do Admin 2", "deny", r.status < 300, brief(r));
+}
+{
+  const r = await storage(ADM2, "GET", `object/proposal-pdfs/${F.pdfA}`);
+  expect("admins", "Admin 2 baixa o PDF do Admin 1", "deny", r.status < 300, brief(r));
+}
+{
+  const r = await storage(ADM2, "GET", `object/proposal-pdfs/${F.pdfC}`);
+  expect("admins", "Admin 2 baixa o próprio PDF", "allow", r.status < 300, brief(r));
+}
+{
+  const r = await storage(ADM, "POST", `object/proposal-pdfs/${F.storeC}/${F.oppC}/plantado.pdf`, {
+    headers: { "Content-Type": "application/pdf", "x-upsert": "true" },
+    body: Buffer.from("%PDF-1.4 plantado\n%%EOF\n"),
+  });
+  expect("admins", "Admin 1 sobe PDF na pasta da loja do Admin 2", "deny", r.status < 300, brief(r));
 }
 
 // ---------------------------------------------------------------------------

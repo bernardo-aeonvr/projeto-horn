@@ -1,11 +1,10 @@
+import { STATUS_BADGE_STYLES } from "@/components/opportunities/status-styles";
 import {
   STATUS_BADGE_LABELS,
   STATUS_LABELS,
   type OpportunityStatus,
 } from "@/lib/opportunities/types";
 import { cn } from "@/lib/utils";
-
-import { STATUS_BADGE_STYLES } from "./status-styles";
 
 export function StatusBadge({
   status,

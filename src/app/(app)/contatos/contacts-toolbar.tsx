@@ -16,6 +16,8 @@ import {
 } from "@/lib/contacts/types";
 import { cn } from "@/lib/utils";
 
+import { ExportContactsButton } from "./export-contacts-button";
+
 const SEARCH_DEBOUNCE_MS = 300;
 
 type ContactsToolbarProps = {
@@ -100,10 +102,18 @@ export function ContactsToolbar({
           />
         </div>
 
-        <Button onClick={onNewContact} className="sm:ml-auto">
-          <Plus className="size-4" aria-hidden />
-          Registrar contato
-        </Button>
+        {/*
+          A exportação fica ao lado da ação principal e recebe os mesmos
+          filtros da listagem: o que está na tela é o que vai para a planilha.
+        */}
+        <div className="flex flex-col gap-3 sm:ml-auto sm:flex-row sm:items-center">
+          <ExportContactsButton filters={filters} stores={stores} />
+
+          <Button onClick={onNewContact}>
+            <Plus className="size-4" aria-hidden />
+            Registrar contato
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

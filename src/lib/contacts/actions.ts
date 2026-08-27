@@ -7,8 +7,8 @@ import { authorizeAdminAction } from "@/lib/auth/session";
 import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
-import { listContactsByProfessional } from "./queries";
-import type { Contact, ContactFormState } from "./types";
+import { listContactsByProfessional, listContactsForExport } from "./queries";
+import type { Contact, ContactFilters, ContactFormState } from "./types";
 import { parseContactForm } from "./validation";
 
 const CONTATOS_PATH = "/contatos";
@@ -314,4 +314,45 @@ export async function getProfessionalContactsAction(
   if (!authorization.ok) return [];
 
   return listContactsByProfessional(professionalId);
+}
+
+// --------------------------------------------------------------------------
+// Exportação
+// --------------------------------------------------------------------------
+
+export type ContactExportPayload = {
+  contacts: Contact[];
+  /** True quando o teto de linhas foi atingido e a planilha não traz tudo. */
+  truncated: boolean;
+  error: string | null;
+};
+
+/**
+ * Todos os contatos do recorte atual, para a planilha.
+ *
+ * A tela pagina de 25 em 25; a exportação precisa do conjunto inteiro, e é
+ * aqui que ele é montado — no servidor, com a sessão de quem pediu. O
+ * navegador recebe as linhas prontas e só desenha o arquivo.
+ *
+ * `authorizeAdminAction` é o mesmo portão da página, que é admin-only por
+ * `requireAdminUser`: um contato guarda quais lojas foram apresentadas juntas,
+ * e abrir isso para uma loja revelaria as outras marcas representadas (spec,
+ * seção 4.2). Não existe versão de loja desta exportação porque não existe
+ * versão de loja desta tela.
+ */
+export async function exportContactsAction(
+  filters: ContactFilters,
+): Promise<ContactExportPayload> {
+  const authorization = await authorizeAdminAction();
+  if (!authorization.ok) {
+    return { contacts: [], truncated: false, error: authorization.message };
+  }
+
+  const result = await listContactsForExport(filters);
+
+  return {
+    contacts: result.contacts,
+    truncated: result.truncated,
+    error: result.error,
+  };
 }

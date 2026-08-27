@@ -8,8 +8,8 @@ import type { OpportunityStatus } from "@/lib/opportunities/types";
  * âmbar (esperando terceiro), passa pelo dourado da marca quando existe
  * proposta e termina em verde ou vermelho. Nada aqui é chapado nem saturado.
  *
- * O badge da listagem e o card de resumo leem daqui, para que um status nunca
- * apareça com duas cores diferentes na mesma tela.
+ * O badge da listagem e os cards de resumo (Projetos & Propostas e dashboard)
+ * leem daqui, para que um status nunca apareça com duas cores diferentes.
  */
 export const STATUS_BADGE_STYLES: Record<OpportunityStatus, string> = {
   project_received: "bg-graphite-100 text-graphite-700",
@@ -24,6 +24,8 @@ export const STATUS_BADGE_STYLES: Record<OpportunityStatus, string> = {
 export type StatusCardStyle = {
   /** Repouso: mesma família de cor do badge, em superfície de card. */
   base: string;
+  /** Só nos cards clicáveis — sem ação, o hover prometeria um clique que não existe. */
+  hover: string;
   /** Selecionado: a mesma cor, um passo mais firme na borda. */
   active: string;
 };
@@ -36,31 +38,38 @@ export type StatusCardStyle = {
  */
 export const STATUS_CARD_STYLES: Record<OpportunityStatus, StatusCardStyle> = {
   project_received: {
-    base: "border-graphite-200 bg-graphite-50 text-graphite-700 hover:bg-graphite-100",
+    base: "border-graphite-200 bg-graphite-50 text-graphite-700",
+    hover: "hover:bg-graphite-100",
     active: "border-graphite-400 ring-graphite-300",
   },
   waiting_store_proposal: {
-    base: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100/70",
+    base: "border-amber-200 bg-amber-50 text-amber-700",
+    hover: "hover:bg-amber-100/70",
     active: "border-amber-400 ring-amber-300",
   },
   proposal_received: {
-    base: "border-gold-200 bg-gold-50 text-gold-800 hover:bg-gold-100/70",
+    base: "border-gold-200 bg-gold-50 text-gold-800",
+    hover: "hover:bg-gold-100/70",
     active: "border-gold-400 ring-gold-300",
   },
   proposal_sent_to_professional: {
-    base: "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100/70",
+    base: "border-sky-200 bg-sky-50 text-sky-700",
+    hover: "hover:bg-sky-100/70",
     active: "border-sky-400 ring-sky-300",
   },
   negotiating: {
-    base: "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100/70",
+    base: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    hover: "hover:bg-indigo-100/70",
     active: "border-indigo-400 ring-indigo-300",
   },
   closed: {
-    base: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100/70",
+    base: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    hover: "hover:bg-emerald-100/70",
     active: "border-emerald-400 ring-emerald-300",
   },
   lost: {
-    base: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100/70",
+    base: "border-red-200 bg-red-50 text-red-700",
+    hover: "hover:bg-red-100/70",
     active: "border-red-400 ring-red-300",
   },
 };

@@ -2,8 +2,9 @@
 
 import { Pencil, Trash2 } from "lucide-react";
 
+import { ChannelBadge } from "@/components/contacts/channel-badge";
 import { formatContactedAt } from "@/lib/contacts/period";
-import { CHANNEL_LABELS, type Contact, type ContactStore } from "@/lib/contacts/types";
+import type { Contact, ContactStore } from "@/lib/contacts/types";
 import { cn } from "@/lib/utils";
 
 type ContactListProps = {
@@ -11,27 +12,6 @@ type ContactListProps = {
   onEdit: (contact: Contact) => void;
   onDelete: (contact: Contact) => void;
 };
-
-const CHANNEL_STYLES: Record<string, string> = {
-  whatsapp: "bg-emerald-50 text-emerald-700",
-  phone: "bg-sky-50 text-sky-700",
-  instagram: "bg-fuchsia-50 text-fuchsia-700",
-  email: "bg-amber-50 text-amber-700",
-  other: "bg-graphite-100 text-graphite-600",
-};
-
-export function ChannelBadge({ channel }: { channel: Contact["channel"] }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
-        CHANNEL_STYLES[channel] ?? CHANNEL_STYLES.other,
-      )}
-    >
-      {CHANNEL_LABELS[channel]}
-    </span>
-  );
-}
 
 /**
  * Lojas apresentadas, resumidas.

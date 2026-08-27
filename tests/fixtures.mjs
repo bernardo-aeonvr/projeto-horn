@@ -141,6 +141,17 @@ async function setup() {
               'Rua Reservada 456 - SEC_TEST', 'CARTEIRA DO SEGUNDO ADMIN SEC_TEST', true)
       returning id
     ),
+    /*
+      Profissional que só a Loja B alcançou. É o contraponto do de cima: um
+      aparece nas duas lojas, este só em uma — é assim que o teste prova que o
+      dashboard da loja (migration 0012) não mistura o alcance de ninguém.
+    */
+    prof3 as (
+      insert into public.professionals (owner_id, name, segment_id, email, is_active)
+      values (${q(admin)}, 'SEC_TEST Profissional So da B', (select id from seg),
+              'sec-test-prof3@example.com', true)
+      returning id
+    ),
     profreg as (
       insert into public.professional_regions (professional_id, region_id)
       select (select id from prof), (select id from reg) returning professional_id
@@ -168,6 +179,32 @@ async function setup() {
       insert into public.contact_stores (contact_id, store_id)
       select (select id from ct2), (select id from loja_c) returning contact_id
     ),
+    ct3 as (
+      insert into public.contacts (owner_id, professional_id, contacted_at, channel, notes)
+      values (${q(admin)}, (select id from prof3), now() - interval '3 days', 'email',
+              'SEC_TEST contato exclusivo da Loja B')
+      returning id
+    ),
+    cs3 as (
+      insert into public.contact_stores (contact_id, store_id)
+      select (select id from ct3), (select id from loja_b) returning contact_id
+    ),
+    /*
+      Segundo contato do MESMO profissional na Loja A, por outro canal e mais
+      recente que o primeiro. É o caso que o filtro de canal precisa acertar:
+      sem filtro, o último contato é este (e-mail); filtrando por WhatsApp, o
+      último volta a ser o de dois dias atrás, e a contagem cai de 2 para 1.
+    */
+    ct4 as (
+      insert into public.contacts (owner_id, professional_id, contacted_at, channel, notes)
+      values (${q(admin)}, (select id from prof), now() - interval '1 hour', 'email',
+              'SEC_TEST contato por e-mail da Loja A')
+      returning id
+    ),
+    cs4 as (
+      insert into public.contact_stores (contact_id, store_id)
+      select (select id from ct4), (select id from loja_a) returning contact_id
+    ),
     opp_a as (
       insert into public.opportunities (owner_id, professional_id, store_id, title, notes, status,
                                         proposal_initial_value, final_closed_value, commission_percent)
@@ -192,7 +229,9 @@ async function setup() {
     select (select id from loja_a) as store_a, (select id from loja_b) as store_b,
            (select id from loja_c) as store_c,
            (select id from prof) as professional, (select id from prof2) as professional2,
+           (select id from prof3) as professional3,
            (select id from ct) as contact, (select id from ct2) as contact2,
+           (select id from ct3) as contact3, (select id from ct4) as contact4,
            (select id from opp_a) as opp_a, (select id from opp_b) as opp_b,
            (select id from opp_c) as opp_c;
   `);
@@ -253,7 +292,9 @@ async function setup() {
     admin2: { id: admin2, ...USERS.admin2 },
     storeA: f.store_a, storeB: f.store_b, storeC: f.store_c,
     professional: f.professional, professional2: f.professional2,
-    contact: f.contact, contact2: f.contact2,
+    professional3: f.professional3,
+    contact: f.contact, contact2: f.contact2, contact3: f.contact3,
+    contact4: f.contact4,
     oppA: f.opp_a, oppB: f.opp_b, oppC: f.opp_c,
     pdfA, pdfB, pdfC,
     attachmentA: att.find((a) => a.opportunity_id === f.opp_a)?.id,
@@ -263,7 +304,8 @@ async function setup() {
 
   writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2));
   console.log(`Fixtures prontos. Manifesto em tests/fixtures.json`);
-  console.log("  Admin 1: Loja A / Loja B, 1 profissional, 1 contato com as duas lojas,");
+  console.log("  Admin 1: Loja A / Loja B, 2 profissionais, 1 contato com as duas lojas,");
+  console.log("  1 contato só da Loja B,");
   console.log("  1 oportunidade e 1 PDF por loja.");
   console.log("  Admin 2: Loja C, 1 profissional, 1 contato, 1 oportunidade, 1 PDF.");
   console.log("  5 usuários SEC_TEST (3 lojas, 2 admins).");

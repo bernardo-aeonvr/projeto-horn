@@ -10,6 +10,9 @@
  * `ActivityMetrics` conta EVENTOS ocorridos dentro do período.
  */
 
+import type { ContactChannel } from "@/lib/contacts/types";
+import type { OpportunityStatusCounts } from "@/lib/opportunities/types";
+
 /** Estado atual da base. Independente do período selecionado. */
 export type PortfolioTotals = {
   professionals_total: number;
@@ -65,6 +68,17 @@ export const EMPTY_METRICS: ActivityMetrics = {
   professionals_with_projects: 0,
 };
 
+/*
+ * Os cards de funil ficam entre as duas semânticas acima, e vale registrar de
+ * que lado: o RECORTE é o do período (os projetos que entraram nele, igual ao
+ * KPI "Projetos recebidos"), mas o NÚMERO é de estado — em que status cada um
+ * desses projetos está hoje. Por isso eles não entram em `ActivityMetrics`,
+ * que conta eventos, e a soma dos sete status bate com `projects_received`.
+ *
+ * O tipo vem do domínio de Projetos & Propostas: é a mesma contagem por status
+ * que a listagem usa, sem uma segunda definição do que é cada status.
+ */
+
 /** Uma fatia da distribuição da carteira (segmento ou região). */
 export type DistributionSlice = {
   label: string;
@@ -91,6 +105,48 @@ export type TrendPoint = {
   deals_closed: number;
 };
 
+/**
+ * Uma posição do "Top 5 profissionais".
+ *
+ * `projects` conta registros de projeto, não interações: um projeto que andou
+ * por seis status continua valendo um. Nada de contatos entra aqui — só quem
+ * gerou projeto no recorte tem posição.
+ */
+export type TopProfessional = {
+  professional_id: string;
+  name: string;
+  projects: number;
+};
+
+/**
+ * Uma linha de "Profissionais contatados no período".
+ *
+ * Um profissional por linha, não um contato por linha: quem foi procurado três
+ * vezes aparece uma vez, com `contacts = 3`. É o KPI "Profissionais
+ * contatados" aberto nome a nome, e a contagem de linhas é o próprio KPI.
+ */
+export type ContactedProfessional = {
+  professional_id: string;
+  name: string;
+  segment_name: string | null;
+  /** Situação atual na carteira. Não filtra a lista; só sinaliza na tela. */
+  is_active: boolean;
+  /** Contato mais recente DENTRO do período. */
+  last_contact_at: string;
+  /** Canal daquele contato mais recente — nunca o do primeiro. */
+  last_channel: ContactChannel;
+  /** Quantos contatos no período. Somado, dá o KPI "Contatos realizados". */
+  contacts: number;
+  /**
+   * Marcas distintas apresentadas a ele no período.
+   *
+   * Null no dashboard da loja, de propósito: dizer a uma marca quantas
+   * concorrentes estavam na mesma conversa é informação das outras lojas, não
+   * dela. Só o admin recebe o número.
+   */
+  stores_presented: number | null;
+};
+
 /** Profissional alcançado, na visão que a loja pode ver. */
 export type StoreOption = { id: string; name: string; is_active: boolean };
 
@@ -98,6 +154,20 @@ export type StoreOption = { id: string; name: string; is_active: boolean };
 export type AdminDashboardData = {
   portfolio: PortfolioTotals;
   metrics: ActivityMetrics;
+  /** Situação atual dos projetos que entraram no período (e na loja filtrada). */
+  statusCounts: OpportunityStatusCounts;
+  /** Ranking do mesmo conjunto de projetos, por profissional. Até cinco. */
+  topProfessionals: TopProfessional[];
+  /** O KPI "Profissionais contatados" aberto: um profissional por linha. */
+  contactedProfessionals: ContactedProfessional[];
+  /**
+   * Falha exclusiva da lista acima.
+   *
+   * Ela é a única parte da tela que depende de uma função criada depois do
+   * primeiro deploy (migration 0010). Enquanto ela não for aplicada, só este
+   * card avisa — o resto do dashboard, que não depende dela, continua de pé.
+   */
+  contactedProfessionalsError: string | null;
   /** Distribuição da carteira inteira, por segmento. */
   segments: DistributionSlice[];
   /** Distribuição da carteira inteira, por região. */
@@ -119,6 +189,14 @@ export type AdminDashboardData = {
 /** Tudo que o Dashboard da Loja renderiza. */
 export type StoreDashboardData = {
   metrics: ActivityMetrics;
+  /** Situação atual dos projetos da própria loja que entraram no período. */
+  statusCounts: OpportunityStatusCounts;
+  /** Ranking dos mesmos projetos — os desta loja — por profissional. */
+  topProfessionals: TopProfessional[];
+  /** O KPI "Profissionais contatados" desta loja, aberto nome a nome. */
+  contactedProfessionals: ContactedProfessional[];
+  /** Falha exclusiva da lista acima; o resto da tela continua de pé. */
+  contactedProfessionalsError: string | null;
   segments: DistributionSlice[];
   regions: DistributionSlice[];
   storeName: string | null;

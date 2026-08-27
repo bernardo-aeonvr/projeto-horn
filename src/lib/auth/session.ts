@@ -21,6 +21,11 @@ export type SessionUser = {
   /** Sempre preenchido quando `role` é "store". `null` para admin. */
   storeId: string | null;
   storeName: string | null;
+  /**
+   * Caminho do logotipo da loja no bucket, quando ela tiver um. Vem no mesmo
+   * embed do nome — nenhuma consulta a mais — e serve à marca no dashboard.
+   */
+  storeLogoPath: string | null;
 };
 
 /**
@@ -46,12 +51,14 @@ type UserProfileRow = {
   role: AppRole | null;
   store_id: string | null;
   is_active: boolean | null;
-  stores: { name: string } | { name: string }[] | null;
+  stores: StoreEmbed | StoreEmbed[] | null;
 };
 
-function readStoreName(stores: UserProfileRow["stores"]) {
+type StoreEmbed = { name: string; logo_path: string | null };
+
+function readStore(stores: UserProfileRow["stores"]): StoreEmbed | null {
   if (!stores) return null;
-  return Array.isArray(stores) ? (stores[0]?.name ?? null) : stores.name;
+  return Array.isArray(stores) ? (stores[0] ?? null) : stores;
 }
 
 /**
@@ -81,7 +88,7 @@ export const getAccessState = cache(async function getAccessState(): Promise<Acc
 
   const { data: profile, error } = await supabase
     .from("user_profiles")
-    .select("full_name, role, store_id, is_active, stores(name)")
+    .select("full_name, role, store_id, is_active, stores(name, logo_path)")
     .eq("id", user.id)
     .maybeSingle<UserProfileRow>();
 
@@ -119,7 +126,8 @@ export const getAccessState = cache(async function getAccessState(): Promise<Acc
       name,
       role: profile.role,
       storeId: profile.role === "store" ? profile.store_id : null,
-      storeName: readStoreName(profile.stores),
+      storeName: readStore(profile.stores)?.name ?? null,
+      storeLogoPath: readStore(profile.stores)?.logo_path ?? null,
     },
   };
 });

@@ -7,6 +7,13 @@ type KpiCardProps = {
   hint?: string;
   /** Destaca o card principal do bloco, sem encher a tela de dourado. */
   emphasis?: boolean;
+  /**
+   * Cor de fundo do card. `negative` marca um resultado ruim (negócios
+   * perdidos) na mesma família de vermelho do status "Perdida", em superfície
+   * de card. Só a superfície muda: rótulo e número seguem na cor de sempre,
+   * para o card informar sem alarmar.
+   */
+  tone?: "neutral" | "negative";
   /** Números menores, para as faixas secundárias de KPI. */
   size?: "md" | "sm";
 };
@@ -41,13 +48,18 @@ export function KpiCard({
   value,
   hint,
   emphasis,
+  tone = "neutral",
   size = "md",
 }: KpiCardProps) {
   return (
     <div
       className={cn(
         "row-span-3 grid grid-rows-subgrid rounded-card border bg-white px-4 py-4 shadow-card sm:px-5",
-        emphasis ? "border-gold-200 bg-gold-50/40" : "border-graphite-200",
+        tone === "negative"
+          ? "border-red-200 bg-red-50/50"
+          : emphasis
+            ? "border-gold-200 bg-gold-50/40"
+            : "border-graphite-200",
       )}
     >
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-graphite-500">

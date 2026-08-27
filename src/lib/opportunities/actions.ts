@@ -10,13 +10,16 @@ import { createClient } from "@/lib/supabase/server";
 import {
   getOpportunity,
   listOpportunitiesByProfessional,
+  listOpportunitiesForExport,
   listOpportunityHistory,
   listProposalAttachments,
+  listStoreOpportunitiesForExport,
 } from "./queries";
 import {
   STATUS_LABELS,
   type ActionResult,
   type Opportunity,
+  type OpportunityFilters,
   type OpportunityDetails,
   type OpportunityFormState,
   type OpportunityStatus,
@@ -598,4 +601,66 @@ export async function removeProposalAttachmentAction(
   revalidate();
 
   return { ok: true, message: "PDF removido da proposta." };
+}
+
+// --------------------------------------------------------------------------
+// Exportação
+// --------------------------------------------------------------------------
+
+export type OpportunityExportPayload = {
+  opportunities: Opportunity[];
+  /** True quando o teto de linhas foi atingido e a planilha não traz tudo. */
+  truncated: boolean;
+  /**
+   * Se a planilha pode ter a coluna de observações internas da HORN. Quem
+   * decide é o servidor, pelo papel de quem pediu: para a loja o campo nem
+   * chega preenchido, e uma coluna vazia sugeriria que existe algo escondido.
+   */
+  includeNotes: boolean;
+  error: string | null;
+};
+
+const EMPTY_EXPORT: OpportunityExportPayload = {
+  opportunities: [],
+  truncated: false,
+  includeNotes: false,
+  error: null,
+};
+
+/**
+ * Todos os projetos do recorte atual, para a planilha.
+ *
+ * A tela pagina de 25 em 25; a exportação precisa do conjunto inteiro, e é
+ * aqui que ele é montado — no servidor, com a sessão de quem pediu.
+ *
+ * Os dois papéis leem por portas diferentes, as MESMAS da listagem: o admin
+ * pela tabela (RLS `opportunities_read`, que já o limita à carteira dele) e a
+ * loja pela `get_store_opportunities_page`, que resolve a loja pelo perfil
+ * autenticado. Por isso `filters.storeId` é descartado para a loja, como a
+ * página faz: não existe recorte de loja vindo do cliente.
+ */
+export async function exportOpportunitiesAction(
+  filters: OpportunityFilters,
+): Promise<OpportunityExportPayload> {
+  const user = await getSessionUser();
+
+  if (!user) {
+    return {
+      ...EMPTY_EXPORT,
+      error: "Sua sessão expirou. Entre novamente para continuar.",
+    };
+  }
+
+  const isAdmin = user.role === "admin";
+
+  const result = isAdmin
+    ? await listOpportunitiesForExport(filters)
+    : await listStoreOpportunitiesForExport({ ...filters, storeId: "" });
+
+  return {
+    opportunities: result.opportunities,
+    truncated: result.truncated,
+    includeNotes: isAdmin,
+    error: result.error,
+  };
 }

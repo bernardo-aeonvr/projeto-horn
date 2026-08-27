@@ -20,13 +20,19 @@ export type Store = {
   /** Formato ISO `AAAA-MM-DD` (coluna `date`). */
   start_date: string | null;
   notes: string | null;
+  /**
+   * Caminho do logotipo no bucket `store-logos`, ou null. Opcional: a loja
+   * funciona sem ele, e a maioria não tem. A URL pública sai de
+   * `storeLogoUrl` — não é guardada aqui.
+   */
+  logo_path: string | null;
   created_at: string;
   updated_at: string;
 };
 
 /** Colunas selecionadas nas listagens. Mantém a query e o tipo em sincronia. */
 export const STORE_COLUMNS =
-  "id, name, category, contact_name, phone, is_active, monthly_fixed_fee, default_commission_percent, start_date, notes, created_at, updated_at";
+  "id, name, category, contact_name, phone, is_active, monthly_fixed_fee, default_commission_percent, start_date, notes, logo_path, created_at, updated_at";
 
 export const STORE_STATUS_FILTERS = ["todas", "ativas", "inativas"] as const;
 export type StoreStatusFilter = (typeof STORE_STATUS_FILTERS)[number];
@@ -83,6 +89,14 @@ export type StoreFormState = {
    * campos para remontá-los com os valores acima.
    */
   attemptedAt: number | null;
+  /**
+   * Id da loja recém-cadastrada.
+   *
+   * Só o cadastro preenche, e existe por causa do logotipo: a imagem só pode
+   * ser enviada para a pasta de uma loja que já existe, então o formulário
+   * precisa saber qual loja acabou de nascer para subir o arquivo em seguida.
+   */
+  createdId: string | null;
 };
 
 export const initialStoreFormState: StoreFormState = {
@@ -92,6 +106,7 @@ export const initialStoreFormState: StoreFormState = {
   succeededAt: null,
   values: null,
   attemptedAt: null,
+  createdId: null,
 };
 
 // --------------------------------------------------------------------------

@@ -231,6 +231,138 @@ for (const fn of ["get_store_opportunities_page", "get_store_contact_reach", "ge
 }
 
 // ---------------------------------------------------------------------------
+section("Alcance da loja — cada painel fala da própria loja (migration 0012)");
+// ---------------------------------------------------------------------------
+/*
+  A regra que a 0012 corrigiu: antes, "profissionais contatados" da loja era o
+  alcance do admin inteiro e saía idêntico nos dois painéis. Agora conta só os
+  contatos em que aquela marca foi apresentada.
+
+  Os fixtures montam exatamente o caso do cliente: um profissional apresentado
+  às duas lojas e outro só à Loja B.
+*/
+{
+  const a = await rpc(A, "get_store_contacted_professionals", {});
+  const b = await rpc(B, "get_store_contacted_professionals", {});
+  const rowsA = Array.isArray(a.body) ? a.body : [];
+  const rowsB = Array.isArray(b.body) ? b.body : [];
+
+  expect("alcance", "Loja A recebe a própria lista de contatados", "allow",
+    a.status < 300 && rowsA.some((r) => r.professional_id === F.professional),
+    `${rowsA.length} linha(s)`);
+
+  expect("alcance", "lista da Loja A traz o profissional só da Loja B", "deny",
+    rowsA.some((r) => r.professional_id === F.professional3),
+    `A vê ${rowsA.length} profissional(is)`);
+
+  expect("alcance", "Loja B vê o profissional exclusivo dela", "allow",
+    rowsB.some((r) => r.professional_id === F.professional3),
+    `${rowsB.length} linha(s)`);
+
+  expect("alcance", "lista da loja expõe quantas marcas havia no contato", "deny",
+    rowsA.some((r) => "stores_presented" in r));
+
+  expect("alcance", "lista da loja expõe dados pessoais do profissional", "deny",
+    JSON.stringify(rowsA).includes("sec-test-prof@example.com"));
+
+  // O KPI e a lista têm de contar a mesma coisa, cada um do seu lado.
+  const metricsA = await rpc(A, "get_store_dashboard_metrics", {});
+  const metricsB = await rpc(B, "get_store_dashboard_metrics", {});
+  const kpiA = Number(metricsA.body?.[0]?.professionals_contacted ?? -1);
+  const kpiB = Number(metricsB.body?.[0]?.professionals_contacted ?? -1);
+
+  expect("alcance", "KPI da Loja A bate com a lista dela", "allow",
+    kpiA === rowsA.length, `KPI ${kpiA} × lista ${rowsA.length}`);
+  expect("alcance", "KPI da Loja B bate com a lista dela", "allow",
+    kpiB === rowsB.length, `KPI ${kpiB} × lista ${rowsB.length}`);
+  expect("alcance", "as duas lojas veem o mesmo número de contatados", "deny",
+    kpiA === kpiB, `A=${kpiA} B=${kpiB}`);
+}
+{
+  const r = await rpc(C, "get_store_contacted_professionals", {});
+  const rows = Array.isArray(r.body) ? r.body : [];
+  expect("alcance", "Loja do outro admin vê os contatados do Admin 1", "deny",
+    rows.some((x) => x.professional_id === F.professional || x.professional_id === F.professional3),
+    `${rows.length} linha(s)`);
+}
+{
+  const r = await rpc(ANON, "get_store_contacted_professionals", {});
+  expect("alcance", "Anônimo chama get_store_contacted_professionals", "deny",
+    r.status < 300 && Array.isArray(r.body) && r.body.length > 0, brief(r));
+}
+
+// ---------------------------------------------------------------------------
+section("Filtro de canal — recorta contato, não recorta projeto");
+// ---------------------------------------------------------------------------
+/*
+  Os fixtures dão à Loja A o mesmo profissional em dois canais: WhatsApp há
+  dois dias e e-mail há uma hora. É o caso do cliente — "Ana" com WhatsApp e
+  e-mail — e serve para conferir presença, contagem e último contato por canal.
+
+  A outra metade do teste é o que NÃO pode mudar: projeto, proposta, fechamento
+  e comissão não têm canal, e precisam sair idênticos com qualquer filtro.
+*/
+{
+  const todos = await rpc(A, "get_store_contacted_professionals", {});
+  const zap = await rpc(A, "get_store_contacted_professionals", { p_channel: "whatsapp" });
+  const mail = await rpc(A, "get_store_contacted_professionals", { p_channel: "email" });
+  const insta = await rpc(A, "get_store_contacted_professionals", { p_channel: "instagram" });
+
+  const row = (r) => (Array.isArray(r.body) ? r.body : []).find((x) => x.professional_id === F.professional);
+
+  expect("canal", "sem filtro, o profissional aparece com os dois contatos", "allow",
+    row(todos)?.contacts === 2, `contatos = ${row(todos)?.contacts}`);
+  expect("canal", "WhatsApp devolve só o contato de WhatsApp", "allow",
+    row(zap)?.contacts === 1 && row(zap)?.last_channel === "whatsapp",
+    `contatos = ${row(zap)?.contacts}, canal = ${row(zap)?.last_channel}`);
+  expect("canal", "E-mail devolve só o contato de e-mail", "allow",
+    row(mail)?.contacts === 1 && row(mail)?.last_channel === "email",
+    `contatos = ${row(mail)?.contacts}, canal = ${row(mail)?.last_channel}`);
+
+  // O e-mail é o mais recente: sem filtro ele manda no "último contato";
+  // filtrando por WhatsApp, o último volta a ser o mais antigo.
+  expect("canal", "último contato muda com o canal", "allow",
+    row(todos)?.last_contact_at === row(mail)?.last_contact_at &&
+      row(zap)?.last_contact_at < row(mail)?.last_contact_at,
+    `todos=${row(todos)?.last_contact_at} zap=${row(zap)?.last_contact_at}`);
+
+  expect("canal", "canal sem contato nenhum devolve lista vazia", "allow",
+    Array.isArray(insta.body) && insta.body.length === 0, brief(insta));
+
+  const kpiTodos = await rpc(A, "get_store_dashboard_metrics", {});
+  const kpiZap = await rpc(A, "get_store_dashboard_metrics", { p_channel: "whatsapp" });
+  const kpiInsta = await rpc(A, "get_store_dashboard_metrics", { p_channel: "instagram" });
+  const m = (r) => (Array.isArray(r.body) ? r.body[0] : null) ?? {};
+
+  // Um profissional com dois contatos continua contando uma vez.
+  expect("canal", "KPI conta profissional único, não interação", "allow",
+    Number(m(kpiTodos).professionals_contacted) === 1 &&
+      Number(m(kpiTodos).contact_events) === 2,
+    `únicos=${m(kpiTodos).professionals_contacted} eventos=${m(kpiTodos).contact_events}`);
+  expect("canal", "KPI de WhatsApp conta só o contato de WhatsApp", "allow",
+    Number(m(kpiZap).professionals_contacted) === 1 && Number(m(kpiZap).contact_events) === 1,
+    `únicos=${m(kpiZap).professionals_contacted} eventos=${m(kpiZap).contact_events}`);
+  expect("canal", "canal sem contatos zera o KPI de alcance", "allow",
+    Number(m(kpiInsta).professionals_contacted) === 0, brief(kpiInsta));
+
+  // A metade que não pode se mexer.
+  const iguais = ["projects_received", "proposals_sent", "proposals_closed",
+                  "proposals_lost", "total_closed_value", "total_commission_value"];
+  const mexeu = iguais.filter((k) => String(m(kpiTodos)[k]) !== String(m(kpiInsta)[k]));
+  expect("canal", "métricas de projeto mudam quando o canal muda", "deny",
+    mexeu.length > 0,
+    mexeu.length ? mexeu.join(", ") : `projetos=${m(kpiTodos).projects_received} em ambos`);
+}
+{
+  // A loja continua sem alcançar o que não é dela, com ou sem canal.
+  const r = await rpc(B, "get_store_contacted_professionals", { p_channel: "email" });
+  const rows = Array.isArray(r.body) ? r.body : [];
+  expect("canal", "canal fura o recorte de loja", "deny",
+    rows.some((x) => x.professional_id === F.professional),
+    `Loja B por e-mail vê ${rows.length} profissional(is)`);
+}
+
+// ---------------------------------------------------------------------------
 section("Escalação de privilégio");
 // ---------------------------------------------------------------------------
 {
@@ -632,6 +764,44 @@ expect("admin", "Admin consulta o breakdown da Loja B", "allow",
   expect("admin", "Admin faz upload de PDF", "allow", r.status < 300, brief(r));
   await fetch(`${SUPABASE_URL}/storage/v1/object/proposal-pdfs/${F.storeA}/${F.oppA}/admin-upload.pdf`,
     { method: "DELETE", headers: { apikey: PUBLISHABLE_KEY, Authorization: `Bearer ${ADM}` } });
+}
+
+{
+  /*
+    O mesmo contrato do lado do admin, e com o gráfico junto: o canal mexe na
+    série de contatados e não pode mexer nas de projeto e fechamento, que saem
+    de `opportunities`.
+  */
+  const de = "2026-01-01T00:00:00-03:00";
+  const ate = "2027-01-01T00:00:00-03:00";
+
+  const todos = await rpc(ADM, "get_admin_dashboard_metrics", { p_from: de, p_to: ate });
+  const zap = await rpc(ADM, "get_admin_dashboard_metrics", { p_from: de, p_to: ate, p_channel: "whatsapp" });
+  const m = (r) => (Array.isArray(r.body) ? r.body[0] : null) ?? {};
+
+  expect("canal", "canal estreita o alcance do admin", "allow",
+    Number(zap.body?.[0]?.professionals_contacted) < Number(todos.body?.[0]?.professionals_contacted),
+    `todos=${m(todos).professionals_contacted} whatsapp=${m(zap).professionals_contacted}`);
+
+  const iguais = ["projects_received", "proposals_sent", "proposals_closed",
+                  "proposals_lost", "total_closed_value", "total_commission_value"];
+  const mexeu = iguais.filter((k) => String(m(todos)[k]) !== String(m(zap)[k]));
+  expect("canal", "canal mexe nos números de projeto do admin", "deny",
+    mexeu.length > 0, mexeu.length ? mexeu.join(", ") : `projetos=${m(todos).projects_received} em ambos`);
+
+  const serieTodos = await rpc(ADM, "get_admin_activity_timeseries", { p_from: de, p_to: ate, p_bucket: "month" });
+  const serieZap = await rpc(ADM, "get_admin_activity_timeseries", { p_from: de, p_to: ate, p_bucket: "month", p_channel: "whatsapp" });
+  const soma = (r, campo) => (Array.isArray(r.body) ? r.body : []).reduce((t, p) => t + Number(p[campo] ?? 0), 0);
+
+  expect("canal", "série de contatados responde ao canal", "allow",
+    soma(serieZap, "professionals_contacted") < soma(serieTodos, "professionals_contacted"),
+    `todos=${soma(serieTodos, "professionals_contacted")} whatsapp=${soma(serieZap, "professionals_contacted")}`);
+  expect("canal", "série de projetos responde ao canal", "deny",
+    soma(serieZap, "projects_received") !== soma(serieTodos, "projects_received"),
+    `projetos=${soma(serieTodos, "projects_received")} em ambos`);
+  expect("canal", "série de fechamentos responde ao canal", "deny",
+    soma(serieZap, "deals_closed") !== soma(serieTodos, "deals_closed"),
+    `fechados=${soma(serieTodos, "deals_closed")} em ambos`);
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { Plus, Search, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
+import { StatusSummaryCards } from "@/components/opportunities/status-summary-cards";
 import { Button } from "@/components/ui/button";
 import { inputBaseClass } from "@/components/ui/text-field";
 import { PERIOD_LABELS, PERIOD_PRESETS } from "@/lib/contacts/types";
@@ -16,7 +17,7 @@ import {
 } from "@/lib/opportunities/types";
 import { cn } from "@/lib/utils";
 
-import { StatusSummaryCards } from "./status-summary-cards";
+import { ExportOpportunitiesButton } from "./export-opportunities-button";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -31,6 +32,8 @@ type OpportunitiesToolbarProps = {
   resultCount: number;
   /** Distribuição por status dentro do mesmo recorte da listagem. */
   statusCounts: OpportunityStatusCounts;
+  /** Loja do próprio usuário de loja. `null` para o admin. */
+  storeName: string | null;
   onNewOpportunity: () => void;
 };
 
@@ -41,6 +44,7 @@ export function OpportunitiesToolbar({
   professionalName,
   resultCount,
   statusCounts,
+  storeName,
   onNewOpportunity,
 }: OpportunitiesToolbarProps) {
   const router = useRouter();
@@ -122,12 +126,27 @@ export function OpportunitiesToolbar({
           />
         </div>
 
-        {canManage ? (
-          <Button onClick={onNewOpportunity} className="sm:ml-auto">
-            <Plus className="size-4" aria-hidden />
-            Novo projeto
-          </Button>
-        ) : null}
+        {/*
+          A exportação fica ao lado da ação principal e recebe os mesmos
+          filtros da listagem: o que está na tela é o que vai para a planilha.
+          Ela também aparece para o usuário de loja, que consulta mas não
+          registra — o recorte dele é a própria loja.
+        */}
+        <div className="flex flex-col gap-3 sm:ml-auto sm:flex-row sm:items-center">
+          <ExportOpportunitiesButton
+            filters={filters}
+            stores={stores}
+            professionalName={professionalName}
+            storeName={storeName}
+          />
+
+          {canManage ? (
+            <Button onClick={onNewOpportunity}>
+              <Plus className="size-4" aria-hidden />
+              Novo projeto
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

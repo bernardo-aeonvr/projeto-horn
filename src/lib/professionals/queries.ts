@@ -1,3 +1,4 @@
+import { RANGE_NOT_SATISFIABLE } from "@/lib/pagination";
 import { createClient } from "@/lib/supabase/server";
 
 import {
@@ -52,21 +53,17 @@ const EMPTY_RESULT = (page: number, error: string): ProfessionalListResult => ({
 });
 
 /**
- * Lista profissionais paginados, com os filtros da tela aplicados no banco.
+ * Os filtros da tela, aplicados no banco — em um lugar só.
  *
- * São duas consultas por página, ambas limitadas:
- *   1. os profissionais da página (no máximo PAGE_SIZE linhas);
- *   2. as regiões apenas desses profissionais.
- *
- * Trazer as regiões junto no embed não funcionaria com o filtro por região:
- * o `!inner` restringiria o embed à região filtrada e a lista mostraria
- * apenas ela, escondendo as demais regiões do profissional.
+ * A listagem e a exportação leem exatamente esta consulta; o que muda entre as
+ * duas é apenas o recorte de linhas. É o que garante que a planilha traga o
+ * mesmo conjunto que a tela mostra, inclusive a semântica da busca (nome OU
+ * e-mail, sem diferenciar acento de caixa).
  */
-export async function listProfessionals(
+function filteredQuery(
+  supabase: Awaited<ReturnType<typeof createClient>>,
   filters: ProfessionalFilters,
-): Promise<ProfessionalListResult> {
-  const supabase = await createClient();
-
+) {
   const selectColumns = filters.regionId
     ? `${PROFESSIONAL_COLUMNS}, professional_regions!inner(region_id)`
     : PROFESSIONAL_COLUMNS;
@@ -91,17 +88,58 @@ export async function listProfessionals(
     query = query.or(`name.ilike.${pattern},email.ilike.${pattern}`);
   }
 
-  const from = (filters.page - 1) * PAGE_SIZE;
+  return query;
+}
 
-  const [listResponse, totalResponse] = await Promise.all([
-    query.order("name", { ascending: true }).range(from, from + PAGE_SIZE - 1),
+/**
+ * Lista profissionais paginados, com os filtros da tela aplicados no banco.
+ *
+ * São duas consultas por página, ambas limitadas:
+ *   1. os profissionais da página (no máximo PAGE_SIZE linhas);
+ *   2. as regiões apenas desses profissionais.
+ *
+ * Trazer as regiões junto no embed não funcionaria com o filtro por região:
+ * o `!inner` restringiria o embed à região filtrada e a lista mostraria
+ * apenas ela, escondendo as demais regiões do profissional.
+ */
+export async function listProfessionals(
+  filters: ProfessionalFilters,
+): Promise<ProfessionalListResult> {
+  const supabase = await createClient();
+
+  const pageQuery = (page: number) => {
+    const from = (page - 1) * PAGE_SIZE;
+    return filteredQuery(supabase, filters)
+      .order("name", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+  };
+
+  let page = filters.page;
+
+  const [firstAttempt, totalResponse] = await Promise.all([
+    pageQuery(page),
     supabase.from("professionals").select("id", { count: "exact", head: true }),
   ]);
+  let listResponse = firstAttempt;
+
+  /*
+    Página além do fim do resultado.
+
+    Acontece com URL guardada e ao encolher o filtro sem voltar para a
+    primeira página; o PostgREST responde 416/PGRST103. Não é falha de
+    carregamento — é pedir a página 3 de algo que hoje tem uma —, então
+    tratá-la como erro mostraria "verifique a conexão" e deixaria a tela sem
+    saída, já que a paginação some junto com a lista.
+  */
+  if (listResponse.error?.code === RANGE_NOT_SATISFIABLE && page !== 1) {
+    page = 1;
+    listResponse = await pageQuery(page);
+  }
 
   if (listResponse.error) {
     console.error("[profissionais] falha ao listar", listResponse.error);
     return EMPTY_RESULT(
-      filters.page,
+      page,
       "Não foi possível carregar os profissionais. Verifique a conexão e tente novamente.",
     );
   }
@@ -119,7 +157,7 @@ export async function listProfessionals(
     })),
     filteredCount,
     totalCount: totalResponse.count ?? filteredCount,
-    page: filters.page,
+    page,
     pageCount: Math.max(1, Math.ceil(filteredCount / PAGE_SIZE)),
     error: null,
   };
@@ -127,7 +165,16 @@ export async function listProfessionals(
 
 type RegionRow = { professional_id: string; regions: Region | Region[] | null };
 
-/** Regiões dos profissionais informados, agrupadas e ordenadas. */
+/** Ids por consulta: um `in(...)` com milhares deles estoura a URL. */
+const REGION_ID_CHUNK = 200;
+
+/**
+ * Regiões dos profissionais informados, agrupadas e ordenadas.
+ *
+ * Em lotes porque a exportação chama isto com a lista inteira: na página são
+ * 25 ids, na planilha podem ser centenas, e o filtro do PostgREST viaja na
+ * query string.
+ */
 async function fetchRegions(
   professionalIds: string[],
 ): Promise<Map<string, Region[]>> {
@@ -135,23 +182,27 @@ async function fetchRegions(
   if (professionalIds.length === 0) return grouped;
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("professional_regions")
-    .select("professional_id, regions(id, slug, name, sort_order)")
-    .in("professional_id", professionalIds);
 
-  if (error || !data) {
-    console.error("[profissionais] falha ao carregar regiões", error);
-    return grouped;
-  }
+  for (let start = 0; start < professionalIds.length; start += REGION_ID_CHUNK) {
+    const chunk = professionalIds.slice(start, start + REGION_ID_CHUNK);
+    const { data, error } = await supabase
+      .from("professional_regions")
+      .select("professional_id, regions(id, slug, name, sort_order)")
+      .in("professional_id", chunk);
 
-  for (const row of data as unknown as RegionRow[]) {
-    const region = Array.isArray(row.regions) ? row.regions[0] : row.regions;
-    if (!region) continue;
+    if (error || !data) {
+      console.error("[profissionais] falha ao carregar regiões", error);
+      return grouped;
+    }
 
-    const current = grouped.get(row.professional_id) ?? [];
-    current.push(region);
-    grouped.set(row.professional_id, current);
+    for (const row of data as unknown as RegionRow[]) {
+      const region = Array.isArray(row.regions) ? row.regions[0] : row.regions;
+      if (!region) continue;
+
+      const current = grouped.get(row.professional_id) ?? [];
+      current.push(region);
+      grouped.set(row.professional_id, current);
+    }
   }
 
   for (const regions of grouped.values()) {
@@ -159,6 +210,75 @@ async function fetchRegions(
   }
 
   return grouped;
+}
+
+/** Linhas por ida ao banco na exportação. É o teto do PostgREST. */
+const EXPORT_PAGE = 1000;
+
+/** Teto de segurança da exportação. Documentado no aviso da tela. */
+export const MAX_EXPORT_ROWS = 5000;
+
+export type ProfessionalExportResult = {
+  professionals: Professional[];
+  /** True quando o teto foi atingido e a planilha não traz tudo. */
+  truncated: boolean;
+  error: string | null;
+};
+
+/**
+ * TODOS os profissionais que atendem aos filtros, sem paginação de tela.
+ *
+ * Mesma consulta da listagem — `filteredQuery` —, só que percorrida até o fim.
+ * A página continua sendo página: esta função é chamada só pela exportação, e
+ * não muda nada do que o usuário está vendo.
+ *
+ * A RLS é a mesma de sempre: `professionals_admin_read` devolve a carteira do
+ * próprio admin e nada além. Exportar não amplia o alcance de ninguém.
+ */
+export async function listProfessionalsForExport(
+  filters: ProfessionalFilters,
+): Promise<ProfessionalExportResult> {
+  const supabase = await createClient();
+
+  const rows: ProfessionalRow[] = [];
+  let truncated = false;
+
+  for (let offset = 0; offset < MAX_EXPORT_ROWS; offset += EXPORT_PAGE) {
+    const size = Math.min(EXPORT_PAGE, MAX_EXPORT_ROWS - offset);
+
+    const { data, error } = await filteredQuery(supabase, filters)
+      .order("name", { ascending: true })
+      .range(offset, offset + size - 1);
+
+    if (error) {
+      console.error("[profissionais] falha ao exportar", error);
+      return {
+        professionals: [],
+        truncated: false,
+        error:
+          "Não foi possível montar a exportação. Verifique a conexão e tente novamente.",
+      };
+    }
+
+    const page = (data ?? []) as unknown as ProfessionalRow[];
+    rows.push(...page);
+
+    if (page.length < size) break;
+    // Encheu o teto: a próxima volta não acontece, e a tela avisa.
+    if (offset + size >= MAX_EXPORT_ROWS) truncated = true;
+  }
+
+  const regionsByProfessional = await fetchRegions(rows.map((row) => row.id));
+
+  return {
+    professionals: rows.map((row) => ({
+      ...row,
+      segment: readSegment(row.segment),
+      regions: regionsByProfessional.get(row.id) ?? [],
+    })),
+    truncated,
+    error: null,
+  };
 }
 
 /** Um profissional com segmento e regiões, para o detalhe e a edição. */
@@ -183,6 +303,44 @@ export async function getProfessional(
     segment: readSegment(row.segment),
     regions: regions.get(row.id) ?? [],
   };
+}
+
+/**
+ * Nomes de um punhado de profissionais, por id.
+ *
+ * Existe para o ranking do dashboard: a agregação sai só com ids, e no fim são
+ * cinco nomes (mais os empatados no quinto lugar) a resolver. Uma consulta
+ * para todos, nunca uma por posição.
+ *
+ * Sem filtro de `is_active`, de propósito: o projeto de um profissional que
+ * saiu da carteira ativa continua sendo história do período, e some do
+ * relatório se o nome não vier. É a diferença para `listProfessionalOptions`,
+ * que monta um seletor e por isso só oferece quem ainda está ativo.
+ *
+ * A RLS continua mandando: `professionals_admin_read` só devolve a carteira do
+ * próprio admin. Para o usuário de loja esta função não responde nada — o
+ * caminho dele é `listStoreProfessionalOptions`.
+ */
+export async function listProfessionalNames(
+  ids: string[],
+): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("professionals")
+    .select("id, name")
+    .in("id", ids);
+
+  if (error || !data) {
+    console.error("[profissionais] falha ao resolver nomes por id", error);
+    return new Map();
+  }
+
+  return new Map(
+    (data as { id: string; name: string }[]).map((row) => [row.id, row.name]),
+  );
 }
 
 /** Catálogo oficial de segmentos (spec, seção 7.2). Ids vêm do banco. */

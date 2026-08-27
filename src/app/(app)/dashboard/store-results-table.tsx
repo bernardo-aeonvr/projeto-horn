@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Pagination } from "@/components/ui/pagination";
+import { hasStoreActivity } from "@/lib/dashboard/report";
 import type { StoreResult } from "@/lib/dashboard/types";
 import { formatCurrency } from "@/lib/stores/format";
 import { cn } from "@/lib/utils";
@@ -26,13 +27,9 @@ const PAGE_SIZE = 10;
 export function StoreResultsTable({ results }: { results: StoreResult[] }) {
   const [page, setPage] = useState(1);
 
-  const withActivity = results.filter(
-    (row) =>
-      row.professionals_reached > 0 ||
-      row.projects_received > 0 ||
-      row.proposals_sent > 0 ||
-      row.deals_closed > 0,
-  );
+  // A régua de "teve atividade" mora no modelo do relatório: tela e PDF
+  // precisam concordar sobre quais lojas entram na lista.
+  const withActivity = results.filter(hasStoreActivity);
 
   const pageCount = Math.max(1, Math.ceil(withActivity.length / PAGE_SIZE));
   /*

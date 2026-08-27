@@ -1,5 +1,6 @@
 import { resolvePeriod } from "@/lib/contacts/period";
 import type { PeriodPreset } from "@/lib/contacts/types";
+import { RANGE_NOT_SATISFIABLE } from "@/lib/pagination";
 import { toNumber } from "@/lib/stores/format";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,6 +12,7 @@ import {
   PAGE_SIZE,
   type Opportunity,
   type OpportunityFilters,
+  type OpportunityStatus,
   type OpportunityStatusCounts,
   type OpportunityStatusEvent,
   type OpportunityStore,
@@ -178,30 +180,44 @@ export async function listOpportunities(
     };
   }
 
-  let query = applyScopeFilters(
-    supabase
-      .from("opportunities")
-      .select(OPPORTUNITY_COLUMNS, { count: "exact" }),
-    filters,
-    search,
-  );
+  const pageQuery = (page: number) => {
+    let query = applyScopeFilters(
+      supabase
+        .from("opportunities")
+        .select(OPPORTUNITY_COLUMNS, { count: "exact" }),
+      filters,
+      search,
+    );
 
-  if (filters.status === "abertas") {
-    query = query.in("status", OPEN_STATUSES);
-  } else if (filters.status) {
-    query = query.eq("status", filters.status);
-  }
+    if (filters.status === "abertas") {
+      query = query.in("status", OPEN_STATUSES);
+    } else if (filters.status) {
+      query = query.eq("status", filters.status);
+    }
 
-  const offset = (filters.page - 1) * PAGE_SIZE;
+    const offset = (page - 1) * PAGE_SIZE;
 
-  const [listResponse, totalCount, statusCounts] = await Promise.all([
     // Ordena pela última movimentação: o que andou recentemente vem primeiro.
-    query
+    return query
       .order("updated_at", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1),
+      .range(offset, offset + PAGE_SIZE - 1);
+  };
+
+  let page = filters.page;
+
+  const [firstAttempt, totalCount, statusCounts] = await Promise.all([
+    pageQuery(page),
     countAll(),
     countByStatus(filters, search),
   ]);
+  let listResponse = firstAttempt;
+
+  // Página além do fim do resultado: volta para a primeira em vez de virar
+  // erro de carregamento. Ver a nota em `@/lib/pagination`.
+  if (listResponse.error?.code === RANGE_NOT_SATISFIABLE && page !== 1) {
+    page = 1;
+    listResponse = await pageQuery(page);
+  }
 
   if (listResponse.error) {
     console.error("[projetos] falha ao listar", listResponse.error);
@@ -210,7 +226,7 @@ export async function listOpportunities(
       filteredCount: 0,
       totalCount: 0,
       statusCounts: EMPTY_STATUS_COUNTS,
-      page: filters.page,
+      page,
       pageCount: 1,
       error:
         "Não foi possível carregar os projetos. Verifique a conexão e tente novamente.",
@@ -225,7 +241,7 @@ export async function listOpportunities(
     filteredCount,
     totalCount,
     statusCounts,
-    page: filters.page,
+    page,
     pageCount: Math.max(1, Math.ceil(filteredCount / PAGE_SIZE)),
     error: null,
   };
@@ -351,6 +367,92 @@ async function countAll(): Promise<number> {
   return count ?? 0;
 }
 
+export type OpportunitiesInRangeSummary = {
+  /** Situação de hoje dos projetos que entraram no intervalo. */
+  counts: OpportunityStatusCounts;
+  /**
+   * Quantos projetos do MESMO conjunto cada profissional gerou.
+   * Só ids: o nome não é legível para os dois papéis pela mesma porta.
+   */
+  projectsByProfessional: Map<string, number>;
+  error: string | null;
+};
+
+/**
+ * Resumo dos projetos que ENTRARAM em um intervalo.
+ *
+ * É a consulta que alimenta os cards de status e o ranking de profissionais do
+ * dashboard, nas duas visões. O recorte é o mesmo do KPI "Projetos recebidos"
+ * (`get_admin_dashboard_metrics` e `get_store_dashboard_metrics`):
+ * `created_at` dentro do intervalo, `from` inclusivo e `to` exclusivo, mais a
+ * loja quando houver. Por isso a soma dos sete status — e a soma do ranking
+ * inteiro, antes do corte no quinto lugar — bate exatamente com aquele card.
+ *
+ * Cada projeto entra uma vez só, no status em que está HOJE. Não se olha o
+ * histórico de transições aqui: um negócio que passou por três etapas e hoje
+ * está fechado conta um, em "Fechada", e um só para o profissional dele.
+ *
+ * O recorte por loja do usuário de loja NÃO vem daqui: quem o aplica é a
+ * policy `opportunities_read`, que só devolve as linhas da própria loja. Para
+ * o admin, a mesma policy já limita aos registros dele (migration 0009).
+ *
+ * Uma consulta só, trazendo duas colunas, agregada em memória — o PostgREST
+ * não agrupa. `count` acompanha a resposta para detectar o teto de linhas da
+ * API: se ele cortar, as páginas seguintes são buscadas, em vez de devolver um
+ * número menor sem avisar.
+ */
+export async function summarizeOpportunitiesInRange(
+  range: { from: string; to: string },
+  storeId: string | null,
+): Promise<OpportunitiesInRangeSummary> {
+  const supabase = await createClient();
+
+  const counts: OpportunityStatusCounts = { ...EMPTY_STATUS_COUNTS };
+  const projectsByProfessional = new Map<string, number>();
+  const PAGE = 1000;
+  let offset = 0;
+
+  for (;;) {
+    let query = supabase
+      .from("opportunities")
+      .select("status, professional_id", { count: "exact" })
+      .gte("created_at", range.from)
+      .lt("created_at", range.to);
+
+    if (storeId) query = query.eq("store_id", storeId);
+
+    const { data, count, error } = await query.range(offset, offset + PAGE - 1);
+
+    if (error) {
+      console.error("[dashboard] falha ao resumir os projetos do período", error);
+      return {
+        counts: EMPTY_STATUS_COUNTS,
+        projectsByProfessional: new Map(),
+        error:
+          "Não foi possível carregar a situação dos projetos. Verifique a conexão e tente novamente.",
+      };
+    }
+
+    const rows = (data ?? []) as {
+      status: OpportunityStatus;
+      professional_id: string;
+    }[];
+
+    for (const row of rows) {
+      counts[row.status] += 1;
+      projectsByProfessional.set(
+        row.professional_id,
+        (projectsByProfessional.get(row.professional_id) ?? 0) + 1,
+      );
+    }
+
+    offset += rows.length;
+    if (rows.length === 0 || count === null || offset >= count) break;
+  }
+
+  return { counts, projectsByProfessional, error: null };
+}
+
 type StoreOpportunityRow = {
   id: string;
   professional_id: string;
@@ -371,6 +473,38 @@ type StoreOpportunityRow = {
   filtered_count: number | string;
   total_count: number | string;
 };
+
+/** A linha da função do banco no tipo do domínio. */
+function toStoreOpportunity(row: StoreOpportunityRow): Opportunity {
+  return {
+    id: row.id,
+    professional_id: row.professional_id,
+    store_id: row.store_id,
+    title: row.title,
+    // As observações internas da HORN não são expostas à loja.
+    notes: null,
+    status: row.status,
+    proposal_initial_value: toNumber(row.proposal_initial_value),
+    final_closed_value: toNumber(row.final_closed_value),
+    commission_percent: toNumber(row.commission_percent),
+    commission_value: toNumber(row.commission_value),
+    loss_reason: row.loss_reason,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    professional: {
+      id: row.professional_id,
+      name: row.professional_name,
+      segment_name: row.segment_name,
+    },
+    store: {
+      id: row.store_id,
+      name: row.store_name,
+      is_active: row.store_is_active,
+      // Só interessa ao formulário de projeto, que a loja não abre.
+      default_commission_percent: null,
+    },
+  };
+}
 
 /**
  * Listagem de projetos vista pelo usuário de loja.
@@ -434,36 +568,7 @@ export async function listStoreOpportunities(
       : await countStoreOpportunities();
 
   return {
-    opportunities: rows.map(
-      (row): Opportunity => ({
-        id: row.id,
-        professional_id: row.professional_id,
-        store_id: row.store_id,
-        title: row.title,
-        // As observações internas da HORN não são expostas à loja.
-        notes: null,
-        status: row.status,
-        proposal_initial_value: toNumber(row.proposal_initial_value),
-        final_closed_value: toNumber(row.final_closed_value),
-        commission_percent: toNumber(row.commission_percent),
-        commission_value: toNumber(row.commission_value),
-        loss_reason: row.loss_reason,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        professional: {
-          id: row.professional_id,
-          name: row.professional_name,
-          segment_name: row.segment_name,
-        },
-        store: {
-          id: row.store_id,
-          name: row.store_name,
-          is_active: row.store_is_active,
-          // Só interessa ao formulário de projeto, que a loja não abre.
-          default_commission_percent: null,
-        },
-      }),
-    ),
+    opportunities: rows.map(toStoreOpportunity),
     filteredCount,
     totalCount: Math.max(totalCount, filteredCount),
     statusCounts,
@@ -535,6 +640,158 @@ async function countStoreOpportunities(): Promise<number> {
     .select("id", { count: "exact", head: true });
 
   return count ?? 0;
+}
+
+// --------------------------------------------------------------------------
+// Exportação
+// --------------------------------------------------------------------------
+
+/** Linhas por ida ao banco na exportação. É o teto do PostgREST. */
+const EXPORT_PAGE = 1000;
+
+/** Teto de segurança da exportação. Documentado no aviso da tela. */
+export const MAX_EXPORT_ROWS = 5000;
+
+export type OpportunityExportResult = {
+  opportunities: Opportunity[];
+  /** True quando o teto foi atingido e a planilha não traz tudo. */
+  truncated: boolean;
+  error: string | null;
+};
+
+/**
+ * TODOS os projetos que atendem aos filtros, sem a paginação da tela.
+ *
+ * Mesmo recorte da listagem do admin — `applyScopeFilters` mais o status, a
+ * mesma tradução da busca em ids —, só que percorrido até o fim. A página
+ * continua sendo página: esta função é chamada só pela exportação e não muda
+ * nada do que o usuário está vendo.
+ *
+ * A ordenação é a da tela (última movimentação primeiro), com o id como
+ * critério de desempate. Sem ele, dois projetos com o mesmo `updated_at`
+ * poderiam trocar de lugar entre duas idas ao banco e cair na planilha
+ * duplicados — ou nem cair.
+ *
+ * A RLS não muda: `opportunities_read` devolve o que a listagem devolveria.
+ */
+export async function listOpportunitiesForExport(
+  filters: OpportunityFilters,
+): Promise<OpportunityExportResult> {
+  const supabase = await createClient();
+
+  const term = filters.q.trim();
+  const search = term ? await buildSearchConditions(term) : null;
+
+  // Nenhuma condição possível significa que nada pode casar.
+  if (search !== null && search.length === 0) {
+    return { opportunities: [], truncated: false, error: null };
+  }
+
+  const rows: OpportunityRow[] = [];
+  let truncated = false;
+
+  for (let offset = 0; offset < MAX_EXPORT_ROWS; offset += EXPORT_PAGE) {
+    const size = Math.min(EXPORT_PAGE, MAX_EXPORT_ROWS - offset);
+
+    let query = applyScopeFilters(
+      supabase.from("opportunities").select(OPPORTUNITY_COLUMNS),
+      filters,
+      search,
+    );
+
+    if (filters.status === "abertas") {
+      query = query.in("status", OPEN_STATUSES);
+    } else if (filters.status) {
+      query = query.eq("status", filters.status);
+    }
+
+    const { data, error } = await query
+      .order("updated_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(offset, offset + size - 1);
+
+    if (error) {
+      console.error("[projetos] falha ao exportar", error);
+      return {
+        opportunities: [],
+        truncated: false,
+        error:
+          "Não foi possível montar a exportação. Verifique a conexão e tente novamente.",
+      };
+    }
+
+    const page = (data ?? []) as unknown as OpportunityRow[];
+    rows.push(...page);
+
+    if (page.length < size) break;
+    // Encheu o teto: a próxima volta não acontece, e a tela avisa.
+    if (offset + size >= MAX_EXPORT_ROWS) truncated = true;
+  }
+
+  return {
+    opportunities: rows.map(toOpportunity),
+    truncated,
+    error: null,
+  };
+}
+
+/**
+ * O mesmo, para o usuário de loja.
+ *
+ * Passa pela mesma `get_store_opportunities_page` da listagem dele, só que
+ * pedindo lotes maiores até acabar. A loja continua vindo do perfil
+ * autenticado dentro da função do banco — exportar não abre uma porta com
+ * parâmetro de loja, e `filters.storeId` não é sequer lido aqui.
+ */
+export async function listStoreOpportunitiesForExport(
+  filters: OpportunityFilters,
+): Promise<OpportunityExportResult> {
+  const supabase = await createClient();
+
+  const { from, to } = resolvePeriod(
+    filters.period as PeriodPreset,
+    filters.from,
+    filters.to,
+  );
+
+  const rows: StoreOpportunityRow[] = [];
+  let truncated = false;
+
+  for (let offset = 0; offset < MAX_EXPORT_ROWS; offset += EXPORT_PAGE) {
+    const size = Math.min(EXPORT_PAGE, MAX_EXPORT_ROWS - offset);
+
+    const { data, error } = await supabase.rpc("get_store_opportunities_page", {
+      p_q: filters.q.trim() || null,
+      p_status: filters.status || null,
+      p_professional_id: filters.professionalId || null,
+      p_from: from || null,
+      p_to: to || null,
+      p_limit: size,
+      p_offset: offset,
+    });
+
+    if (error) {
+      console.error("[projetos] falha ao exportar projetos da loja", error);
+      return {
+        opportunities: [],
+        truncated: false,
+        error:
+          "Não foi possível montar a exportação. Verifique a conexão e tente novamente.",
+      };
+    }
+
+    const page = (data as StoreOpportunityRow[] | null) ?? [];
+    rows.push(...page);
+
+    if (page.length < size) break;
+    if (offset + size >= MAX_EXPORT_ROWS) truncated = true;
+  }
+
+  return {
+    opportunities: rows.map(toStoreOpportunity),
+    truncated,
+    error: null,
+  };
 }
 
 /**

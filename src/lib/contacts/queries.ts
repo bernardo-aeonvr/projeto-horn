@@ -1,3 +1,4 @@
+import { RANGE_NOT_SATISFIABLE } from "@/lib/pagination";
 import { createClient } from "@/lib/supabase/server";
 
 import { resolvePeriod } from "./period";
@@ -47,6 +48,63 @@ export type ContactListResult = {
 };
 
 /**
+ * Colunas pedidas ao PostgREST.
+ *
+ * Com filtro de loja entra o `contact_stores!inner`, que é o que permite
+ * filtrar por loja apresentada. Ele NÃO serve para exibir as lojas: sendo
+ * `inner` e filtrado, o embed traria só a loja escolhida e a tela esconderia
+ * as outras que foram apresentadas junto. Quem as traz é `fetchContactStores`.
+ */
+function selectColumns(filters: ContactFilters): string {
+  return filters.storeId
+    ? `${CONTACT_COLUMNS}, contact_stores!inner(store_id)`
+    : CONTACT_COLUMNS;
+}
+
+/** O mínimo do construtor do PostgREST que o recorte compartilhado usa. */
+interface ScopedQuery {
+  ilike(column: string, pattern: string): this;
+  eq(column: string, value: string): this;
+  gte(column: string, value: string): this;
+  lt(column: string, value: string): this;
+}
+
+/**
+ * Busca, canal, loja apresentada e período — o recorte inteiro da tela.
+ *
+ * Uma definição só, usada pela listagem paginada e pela exportação. É o que
+ * garante que a planilha traga exatamente as linhas que a tela conta: não
+ * existe um segundo conjunto de filtros para divergir do primeiro.
+ */
+function applyContactFilters<T>(query: T, filters: ContactFilters): T {
+  /*
+    O construtor entra e sai pelo mesmo tipo, mas dentro daqui ele é visto
+    apenas como `ScopedQuery`. Amarrar o genérico à interface faria o
+    TypeScript instanciar os tipos gerados do PostgREST a cada chamada, o que
+    estoura o limite de profundidade na consulta com embeds.
+  */
+  let scoped = query as ScopedQuery;
+
+  const term = filters.q.trim();
+  if (term) {
+    // Filtro sobre o recurso embutido; o professionals!inner já está no select.
+    scoped = scoped.ilike("professional.name", `%${escapeLikePattern(term)}%`);
+  }
+
+  if (filters.channel) scoped = scoped.eq("channel", filters.channel);
+
+  if (filters.storeId) {
+    scoped = scoped.eq("contact_stores.store_id", filters.storeId);
+  }
+
+  const { from, to } = resolvePeriod(filters.period, filters.from, filters.to);
+  if (from) scoped = scoped.gte("contacted_at", from);
+  if (to) scoped = scoped.lt("contacted_at", to);
+
+  return scoped as T;
+}
+
+/**
  * Lista contatos paginados com os filtros da tela aplicados no banco.
  *
  * Duas consultas por página, ambas limitadas: os contatos da página e, em
@@ -59,38 +117,32 @@ export async function listContacts(
 ): Promise<ContactListResult> {
   const supabase = await createClient();
 
-  const selectColumns = filters.storeId
-    ? `${CONTACT_COLUMNS}, contact_stores!inner(store_id)`
-    : CONTACT_COLUMNS;
-
-  let query = supabase
-    .from("contacts")
-    .select(selectColumns, { count: "exact" });
-
-  const term = filters.q.trim();
-  if (term) {
-    // Filtro sobre o recurso embutido; o professionals!inner já está no select.
-    query = query.ilike("professional.name", `%${escapeLikePattern(term)}%`);
-  }
-
-  if (filters.channel) query = query.eq("channel", filters.channel);
-
-  if (filters.storeId) {
-    query = query.eq("contact_stores.store_id", filters.storeId);
-  }
-
-  const { from, to } = resolvePeriod(filters.period, filters.from, filters.to);
-  if (from) query = query.gte("contacted_at", from);
-  if (to) query = query.lt("contacted_at", to);
-
-  const offset = (filters.page - 1) * PAGE_SIZE;
-
-  const [listResponse, totalResponse] = await Promise.all([
-    query
+  const pageQuery = (page: number) => {
+    const offset = (page - 1) * PAGE_SIZE;
+    return applyContactFilters(
+      supabase
+        .from("contacts")
+        .select(selectColumns(filters), { count: "exact" }),
+      filters,
+    )
       .order("contacted_at", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1),
+      .range(offset, offset + PAGE_SIZE - 1);
+  };
+
+  let page = filters.page;
+
+  const [firstAttempt, totalResponse] = await Promise.all([
+    pageQuery(page),
     supabase.from("contacts").select("id", { count: "exact", head: true }),
   ]);
+  let listResponse = firstAttempt;
+
+  // Página além do fim do resultado: volta para a primeira em vez de virar
+  // erro de carregamento. Ver a nota em `@/lib/pagination`.
+  if (listResponse.error?.code === RANGE_NOT_SATISFIABLE && page !== 1) {
+    page = 1;
+    listResponse = await pageQuery(page);
+  }
 
   if (listResponse.error) {
     console.error("[contatos] falha ao listar", listResponse.error);
@@ -98,7 +150,7 @@ export async function listContacts(
       contacts: [],
       filteredCount: 0,
       totalCount: 0,
-      page: filters.page,
+      page,
       pageCount: 1,
       error:
         "Não foi possível carregar os contatos. Verifique a conexão e tente novamente.",
@@ -117,7 +169,7 @@ export async function listContacts(
     })),
     filteredCount,
     totalCount: totalResponse.count ?? filteredCount,
-    page: filters.page,
+    page,
     pageCount: Math.max(1, Math.ceil(filteredCount / PAGE_SIZE)),
     error: null,
   };
@@ -131,11 +183,18 @@ type ContactStoreRow = {
     | null;
 };
 
+/** Ids por consulta: um `in(...)` com milhares deles estoura a URL. */
+const CONTACT_ID_CHUNK = 200;
+
 /**
  * Lojas apresentadas nos contatos informados, agrupadas por contato.
  *
  * Lê de contact_stores, que é o snapshot do momento do contato — uma loja
  * inativada depois continua aparecendo aqui.
+ *
+ * Em lotes porque a exportação chama isto com a lista inteira: na página são
+ * 25 ids, na planilha podem ser milhares, e o filtro do PostgREST viaja na
+ * query string. Uma consulta por lote, nunca uma por contato.
  */
 async function fetchContactStores(
   contactIds: string[],
@@ -144,23 +203,27 @@ async function fetchContactStores(
   if (contactIds.length === 0) return grouped;
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("contact_stores")
-    .select("contact_id, stores(id, name, is_active)")
-    .in("contact_id", contactIds);
 
-  if (error || !data) {
-    console.error("[contatos] falha ao carregar lojas apresentadas", error);
-    return grouped;
-  }
+  for (let start = 0; start < contactIds.length; start += CONTACT_ID_CHUNK) {
+    const chunk = contactIds.slice(start, start + CONTACT_ID_CHUNK);
+    const { data, error } = await supabase
+      .from("contact_stores")
+      .select("contact_id, stores(id, name, is_active)")
+      .in("contact_id", chunk);
 
-  for (const row of data as unknown as ContactStoreRow[]) {
-    const store = Array.isArray(row.stores) ? row.stores[0] : row.stores;
-    if (!store) continue;
+    if (error || !data) {
+      console.error("[contatos] falha ao carregar lojas apresentadas", error);
+      return grouped;
+    }
 
-    const current = grouped.get(row.contact_id) ?? [];
-    current.push(store);
-    grouped.set(row.contact_id, current);
+    for (const row of data as unknown as ContactStoreRow[]) {
+      const store = Array.isArray(row.stores) ? row.stores[0] : row.stores;
+      if (!store) continue;
+
+      const current = grouped.get(row.contact_id) ?? [];
+      current.push(store);
+      grouped.set(row.contact_id, current);
+    }
   }
 
   for (const stores of grouped.values()) {
@@ -168,6 +231,91 @@ async function fetchContactStores(
   }
 
   return grouped;
+}
+
+// --------------------------------------------------------------------------
+// Exportação
+// --------------------------------------------------------------------------
+
+/** Linhas por ida ao banco na exportação. É o teto do PostgREST. */
+const EXPORT_PAGE = 1000;
+
+/** Teto de segurança da exportação. Documentado no aviso da tela. */
+export const MAX_EXPORT_ROWS = 5000;
+
+export type ContactExportResult = {
+  contacts: Contact[];
+  /** True quando o teto foi atingido e a planilha não traz tudo. */
+  truncated: boolean;
+  error: string | null;
+};
+
+/**
+ * TODOS os contatos que atendem aos filtros, sem a paginação da tela.
+ *
+ * Mesmo recorte da listagem — `applyContactFilters`, a mesma função que
+ * `listContacts` usa —, só que percorrido até o fim. A página continua sendo
+ * página: esta função é chamada só pela exportação e não muda nada do que o
+ * usuário está vendo.
+ *
+ * A ordenação é a da tela (contato mais recente primeiro), com o id como
+ * critério de desempate. Sem ele, dois contatos registrados no mesmo instante
+ * poderiam trocar de lugar entre duas idas ao banco e cair na planilha
+ * duplicados — ou nem cair.
+ *
+ * As lojas apresentadas vêm depois, em lotes, para TODOS os contatos de uma
+ * vez. Duas coisas dependem disso: não haver uma consulta por contato, e o
+ * contato filtrado por uma loja continuar mostrando as outras lojas que
+ * estavam junto naquele dia — o `!inner` do filtro recortaria o embed.
+ */
+export async function listContactsForExport(
+  filters: ContactFilters,
+): Promise<ContactExportResult> {
+  const supabase = await createClient();
+
+  const rows: ContactRow[] = [];
+  let truncated = false;
+
+  for (let offset = 0; offset < MAX_EXPORT_ROWS; offset += EXPORT_PAGE) {
+    const size = Math.min(EXPORT_PAGE, MAX_EXPORT_ROWS - offset);
+
+    const { data, error } = await applyContactFilters(
+      supabase.from("contacts").select(selectColumns(filters)),
+      filters,
+    )
+      .order("contacted_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(offset, offset + size - 1);
+
+    if (error) {
+      console.error("[contatos] falha ao exportar", error);
+      return {
+        contacts: [],
+        truncated: false,
+        error:
+          "Não foi possível montar a exportação. Verifique a conexão e tente novamente.",
+      };
+    }
+
+    const page = (data ?? []) as unknown as ContactRow[];
+    rows.push(...page);
+
+    if (page.length < size) break;
+    // Encheu o teto: a próxima volta não acontece, e a tela avisa.
+    if (offset + size >= MAX_EXPORT_ROWS) truncated = true;
+  }
+
+  const storesByContact = await fetchContactStores(rows.map((row) => row.id));
+
+  return {
+    contacts: rows.map((row) => ({
+      ...row,
+      professional: readProfessional(row.professional),
+      stores: storesByContact.get(row.id) ?? [],
+    })),
+    truncated,
+    error: null,
+  };
 }
 
 /** Histórico completo de um profissional, do mais recente para o mais antigo. */

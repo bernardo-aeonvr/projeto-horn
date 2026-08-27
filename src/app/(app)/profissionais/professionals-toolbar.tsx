@@ -15,6 +15,8 @@ import {
 } from "@/lib/professionals/types";
 import { cn } from "@/lib/utils";
 
+import { ExportProfessionalsButton } from "./export-professionals-button";
+
 const STATUS_LABELS: Record<ProfessionalStatusFilter, string> = {
   todos: "Todos",
   ativos: "Ativos",
@@ -111,10 +113,22 @@ export function ProfessionalsToolbar({
           />
         </div>
 
-        <Button onClick={onNewProfessional} className="sm:ml-auto">
-          <Plus className="size-4" aria-hidden />
-          Novo Profissional
-        </Button>
+        {/*
+          A exportação fica ao lado da ação principal e recebe os mesmos
+          filtros da listagem: o que está na tela é o que vai para a planilha.
+        */}
+        <div className="flex flex-col gap-3 sm:ml-auto sm:flex-row sm:items-center">
+          <ExportProfessionalsButton
+            filters={filters}
+            segments={segments}
+            regions={regions}
+          />
+
+          <Button onClick={onNewProfessional}>
+            <Plus className="size-4" aria-hidden />
+            Novo Profissional
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

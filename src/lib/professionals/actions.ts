@@ -7,7 +7,8 @@ import { authorizeAdminAction } from "@/lib/auth/session";
 import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
-import type { ProfessionalFormState } from "./types";
+import { listProfessionalsForExport } from "./queries";
+import type { ProfessionalFilters, ProfessionalFormState } from "./types";
 import { parseProfessionalForm } from "./validation";
 
 const PROFISSIONAIS_PATH = "/profissionais";
@@ -191,5 +192,45 @@ export async function setProfessionalActiveAction(
   return {
     ok: true,
     message: `Profissional "${data[0].name}" ${isActive ? "ativado" : "inativado"}.`,
+  };
+}
+
+// --------------------------------------------------------------------------
+// Exportação
+// --------------------------------------------------------------------------
+
+export type ProfessionalExportPayload = {
+  professionals: Awaited<
+    ReturnType<typeof listProfessionalsForExport>
+  >["professionals"];
+  truncated: boolean;
+  error: string | null;
+};
+
+/**
+ * A carteira filtrada inteira, para a planilha.
+ *
+ * A tela pagina de 25 em 25; a exportação precisa do conjunto todo, e é aqui
+ * que ele é montado — no servidor, com a sessão de quem pediu. O navegador
+ * recebe as linhas prontas e só desenha o arquivo.
+ *
+ * `authorizeAdminAction` é o mesmo portão da página (que já é admin-only), e a
+ * RLS decide de novo no banco: exportar não alcança um profissional que a
+ * listagem não alcançaria.
+ */
+export async function exportProfessionalsAction(
+  filters: ProfessionalFilters,
+): Promise<ProfessionalExportPayload> {
+  const authorization = await authorizeAdminAction();
+  if (!authorization.ok) {
+    return { professionals: [], truncated: false, error: authorization.message };
+  }
+
+  const result = await listProfessionalsForExport(filters);
+
+  return {
+    professionals: result.professionals,
+    truncated: result.truncated,
+    error: result.error,
   };
 }

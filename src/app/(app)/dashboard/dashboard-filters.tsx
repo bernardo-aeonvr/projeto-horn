@@ -5,6 +5,11 @@ import { useCallback, useTransition } from "react";
 
 import { inputBaseClass } from "@/components/ui/text-field";
 import {
+  CHANNEL_LABELS,
+  CONTACT_CHANNELS,
+  type ContactChannel,
+} from "@/lib/contacts/types";
+import {
   PERIOD_LABELS,
   PERIOD_PRESETS,
   type DashboardPeriod,
@@ -21,6 +26,20 @@ type DashboardFiltersProps = {
   /** Ausente na visão da loja: ela só tem a si mesma. */
   stores?: StoreOption[];
   storeId?: string;
+  /**
+   * Canal do contato; vazio = todos.
+   *
+   * Diferente dos outros dois, este filtro não vale para a tela inteira: ele
+   * estreita só o que nasce de contato. Projetos, propostas, valores e
+   * carteira ignoram o canal, porque canal não descreve nenhum deles.
+   */
+  channel?: ContactChannel | "";
+  /**
+   * Ações da tela (hoje, exportar PDF). Entram nesta faixa, e não em um
+   * cabeçalho próprio, porque pertencem ao mesmo recorte que os filtros ao
+   * lado definem: o que está selecionado aqui é o que será exportado.
+   */
+  actions?: React.ReactNode;
 };
 
 export function DashboardFilters({
@@ -30,6 +49,8 @@ export function DashboardFilters({
   rangeLabel,
   stores,
   storeId = "",
+  channel = "",
+  actions,
 }: DashboardFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -41,8 +62,9 @@ export function DashboardFilters({
       from?: string;
       to?: string;
       storeId?: string;
+      channel?: ContactChannel | "";
     }) => {
-      const merged = { period, from, to, storeId, ...next };
+      const merged = { period, from, to, storeId, channel, ...next };
       const params = new URLSearchParams();
 
       if (merged.period !== "mes") params.set("periodo", merged.period);
@@ -51,6 +73,7 @@ export function DashboardFilters({
         if (merged.to) params.set("ate", merged.to);
       }
       if (merged.storeId) params.set("loja", merged.storeId);
+      if (merged.channel) params.set("canal", merged.channel);
 
       const query = params.toString();
       startTransition(() => {
@@ -59,11 +82,12 @@ export function DashboardFilters({
         });
       });
     },
-    [period, from, to, storeId, pathname, router],
+    [period, from, to, storeId, channel, pathname, router],
   );
 
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+    <>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <select
         value={period}
         onChange={(event) =>
@@ -126,6 +150,31 @@ export function DashboardFilters({
         </select>
       ) : null}
 
+      {/*
+        Terceiro recorte da tela, no mesmo formato dos outros dois. Os canais
+        vêm de CONTACT_CHANNELS/CHANNEL_LABELS, a mesma lista da tela de
+        Contatos — não existe uma segunda definição de canal no produto.
+      */}
+      <select
+        value={channel}
+        onChange={(event) =>
+          apply({ channel: event.target.value as ContactChannel | "" })
+        }
+        aria-label="Filtrar por canal do contato"
+        className={cn(
+          inputBaseClass,
+          "cursor-pointer sm:w-44",
+          channel && "border-gold-300 bg-gold-50/60",
+        )}
+      >
+        <option value="">Todos os canais</option>
+        {CONTACT_CHANNELS.map((option) => (
+          <option key={option} value={option}>
+            {CHANNEL_LABELS[option]}
+          </option>
+        ))}
+      </select>
+
       <p
         aria-live="polite"
         className={cn(
@@ -135,6 +184,26 @@ export function DashboardFilters({
       >
         {rangeLabel}
       </p>
-    </div>
+
+      {/* Empurrado para a direita no desktop; no celular vira a última linha. */}
+      {actions ? <div className="sm:ml-auto">{actions}</div> : null}
+      </div>
+
+      {/*
+        O canal é o único filtro que não vale para a tela inteira, então ele
+        precisa dizer isso em voz alta: sem este aviso, "Profissionais
+        contatados: 4" ao lado de "Projetos recebidos: 19" parece incoerente,
+        quando na verdade os dois estão certos em recortes diferentes.
+      */}
+      {channel ? (
+        <p className="-mt-2 mb-5 rounded-lg border border-gold-200 bg-gold-50/50 px-4 py-2.5 text-sm text-graphite-700">
+          Indicadores de contato restritos ao canal{" "}
+          <strong className="font-semibold text-graphite-900">
+            {CHANNEL_LABELS[channel]}
+          </strong>
+          . Projetos, propostas e valores seguem sem esse recorte.
+        </p>
+      ) : null}
+    </>
   );
 }

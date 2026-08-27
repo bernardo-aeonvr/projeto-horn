@@ -7,6 +7,7 @@ import { authorizeAdminAction } from "@/lib/auth/session";
 import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
+import { STORE_LOGO_BUCKET } from "./logo";
 import type { StoreFormState } from "./types";
 import { parseStoreForm } from "./validation";
 
@@ -47,6 +48,7 @@ function failure(
     succeededAt: null,
     values,
     attemptedAt: Date.now(),
+    createdId: null,
   };
 }
 
@@ -77,11 +79,20 @@ export async function createStoreAction(
       succeededAt: null,
       values: collectFormValues(formData, []),
       attemptedAt: Date.now(),
+      createdId: null,
     };
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("stores").insert(parsed.payload);
+  /*
+    O id volta do insert porque o logotipo depende dele: a imagem é enviada
+    para a pasta `{loja}/` do bucket, que só existe depois que a loja existe.
+  */
+  const { data, error } = await supabase
+    .from("stores")
+    .insert(parsed.payload)
+    .select("id")
+    .maybeSingle<{ id: string }>();
 
   if (error) return failure(translateDbError(error));
 
@@ -96,6 +107,7 @@ export async function createStoreAction(
     succeededAt: Date.now(),
     values: null,
     attemptedAt: null,
+    createdId: data?.id ?? null,
   };
 }
 
@@ -122,6 +134,7 @@ export async function updateStoreAction(
       succeededAt: null,
       values: collectFormValues(formData, []),
       attemptedAt: Date.now(),
+      createdId: null,
     };
   }
 
@@ -152,6 +165,7 @@ export async function updateStoreAction(
     succeededAt: Date.now(),
     values: null,
     attemptedAt: null,
+    createdId: null,
   };
 }
 
@@ -195,4 +209,132 @@ export async function setStoreActiveAction(
     ok: true,
     message: `Loja "${data[0].name}" ${isActive ? "ativada" : "inativada"}.`,
   };
+}
+
+// --------------------------------------------------------------------------
+// Logotipo
+// --------------------------------------------------------------------------
+// O arquivo já subiu ao bucket pelo navegador, com a sessão de quem está
+// logado — as policies `store_logos_*` são a autorização real. Estas duas
+// actions só cuidam do ponteiro na tabela e da limpeza do arquivo antigo.
+
+/** Remove um objeto do bucket, ignorando falha — é só limpeza. */
+async function discardLogo(path: string | null) {
+  if (!path) return;
+
+  try {
+    const supabase = await createClient();
+    await supabase.storage.from(STORE_LOGO_BUCKET).remove([path]);
+  } catch (error) {
+    console.error("[lojas] falha ao limpar logotipo", error);
+  }
+}
+
+/** Lê o logotipo atual antes de trocar, para saber o que apagar depois. */
+async function currentLogoPath(id: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("stores")
+    .select("logo_path")
+    .eq("id", id)
+    .maybeSingle<{ logo_path: string | null }>();
+
+  return data?.logo_path ?? null;
+}
+
+/**
+ * Aponta a loja para um logotipo recém-enviado.
+ *
+ * A ORDEM IMPORTA. O arquivo novo já está no bucket quando esta action roda;
+ * o antigo só é apagado depois que a tabela passou a apontar para o novo. Se a
+ * gravação falhar, quem some é o arquivo novo — a loja continua com o logotipo
+ * que já tinha, em vez de ficar apontando para nada.
+ */
+export async function setStoreLogoAction(
+  id: string,
+  path: string,
+): Promise<ToggleStoreResult> {
+  const sessionError = await requireSession();
+  if (sessionError) {
+    await discardLogo(path);
+    return { ok: false, message: sessionError };
+  }
+
+  // A pasta é o que as policies do bucket conferem; um caminho fora da
+  // convenção não pode virar o logotipo de outra loja.
+  if (!path.startsWith(`${id}/`)) {
+    await discardLogo(path);
+    return {
+      ok: false,
+      message: "Caminho da imagem fora do padrão. Tente enviar novamente.",
+    };
+  }
+
+  const previous = await currentLogoPath(id);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("stores")
+    .update({ logo_path: path })
+    .eq("id", id)
+    .select("name");
+
+  if (error) {
+    await discardLogo(path);
+    return { ok: false, message: translateDbError(error) };
+  }
+
+  // A RLS devolve zero linhas em vez de erro quando o update não é permitido.
+  if (!data || data.length === 0) {
+    await discardLogo(path);
+    return {
+      ok: false,
+      message: "Não foi possível salvar o logotipo desta loja.",
+    };
+  }
+
+  if (previous && previous !== path) await discardLogo(previous);
+
+  revalidatePath(LOJAS_PATH);
+  revalidatePath(DASHBOARD_PATH);
+
+  return { ok: true, message: "Logotipo atualizado." };
+}
+
+/**
+ * Tira o logotipo da loja.
+ *
+ * Mesma ordem: primeiro a loja deixa de apontar para o arquivo, depois o
+ * arquivo é removido. A loja segue válida sem ele.
+ */
+export async function removeStoreLogoAction(
+  id: string,
+): Promise<ToggleStoreResult> {
+  const sessionError = await requireSession();
+  if (sessionError) return { ok: false, message: sessionError };
+
+  const previous = await currentLogoPath(id);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("stores")
+    .update({ logo_path: null })
+    .eq("id", id)
+    .select("name");
+
+  if (error) return { ok: false, message: translateDbError(error) };
+
+  if (!data || data.length === 0) {
+    return {
+      ok: false,
+      message: "Não foi possível remover o logotipo desta loja.",
+    };
+  }
+
+  await discardLogo(previous);
+
+  revalidatePath(LOJAS_PATH);
+  revalidatePath(DASHBOARD_PATH);
+
+  return { ok: true, message: "Logotipo removido." };
 }

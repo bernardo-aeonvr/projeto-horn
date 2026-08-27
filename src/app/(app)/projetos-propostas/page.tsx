@@ -77,6 +77,7 @@ export default async function ProjetosPropostasPage({
         activeStores={[]}
         allStores={[]}
         professionalName={professionalName}
+        storeName={user.storeName}
         filters={filters}
         filteredCount={list.filteredCount}
         totalCount={list.totalCount}
@@ -111,6 +112,8 @@ export default async function ProjetosPropostasPage({
       activeStores={activeStores}
       allStores={allStores}
       professionalName={professionalName}
+      // O admin não tem loja própria: o recorte dele vem do filtro.
+      storeName={null}
       filters={filters}
       filteredCount={list.filteredCount}
       totalCount={list.totalCount}

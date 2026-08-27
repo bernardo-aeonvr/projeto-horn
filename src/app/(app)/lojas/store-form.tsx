@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
 import {
   CurrencyField,
@@ -14,8 +14,16 @@ import { Button } from "@/components/ui/button";
 import { FormAlert } from "@/components/ui/form-alert";
 import { TextField } from "@/components/ui/text-field";
 import { submittedNumber, submittedText } from "@/lib/form-values";
-import { createStoreAction, updateStoreAction } from "@/lib/stores/actions";
+import {
+  createStoreAction,
+  setStoreLogoAction,
+  updateStoreAction,
+} from "@/lib/stores/actions";
+import { buildStoreLogoPath, STORE_LOGO_BUCKET } from "@/lib/stores/logo";
+import { createClient } from "@/lib/supabase/client";
 import { initialStoreFormState, type Store } from "@/lib/stores/types";
+
+import { StoreLogoField } from "./store-logo-field";
 
 type StoreFormProps = {
   /** Loja em edição, ou null para cadastro. */
@@ -41,17 +49,60 @@ export function StoreForm({
   const errorRef = useRef<HTMLDivElement>(null);
   const lastHandledRef = useRef<number | null>(null);
 
+  /*
+    Logotipo escolhido antes de a loja existir. Editando ele é null: ali o
+    campo envia sozinho, porque já existe pasta para onde subir.
+  */
+  const [pendingLogo, setPendingLogo] = useState<File | null>(null);
+
   // Fecha o painel apenas uma vez por gravação bem-sucedida.
   useEffect(() => {
     if (
-      state.status === "success" &&
-      state.succeededAt !== null &&
-      state.succeededAt !== lastHandledRef.current
+      state.status !== "success" ||
+      state.succeededAt === null ||
+      state.succeededAt === lastHandledRef.current
     ) {
-      lastHandledRef.current = state.succeededAt;
-      onSaved(state.message ?? "Loja salva.");
+      return;
     }
-  }, [state, onSaved]);
+
+    lastHandledRef.current = state.succeededAt;
+    const saved = state.message ?? "Loja salva.";
+
+    // Cadastro sem imagem, ou edição: nada a subir.
+    if (!pendingLogo || !state.createdId) {
+      onSaved(saved);
+      return;
+    }
+
+    /*
+      A loja acabou de nascer e só agora tem pasta no bucket. O envio acontece
+      aqui, depois do insert, e uma falha dele NÃO desfaz o cadastro: a loja
+      está salva e o admin adiciona o logotipo editando.
+    */
+    const storeId = state.createdId;
+    const file = pendingLogo;
+
+    void (async () => {
+      const path = buildStoreLogoPath(storeId, file);
+      const supabase = createClient();
+      const { error } = await supabase.storage
+        .from(STORE_LOGO_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: false });
+
+      if (error) {
+        console.error("[lojas] falha ao enviar o logotipo do cadastro", error);
+        onSaved(`${saved} Não foi possível enviar o logotipo — edite a loja para tentar de novo.`);
+        return;
+      }
+
+      const result = await setStoreLogoAction(storeId, path);
+      onSaved(
+        result.ok
+          ? saved
+          : `${saved} Não foi possível salvar o logotipo — edite a loja para tentar de novo.`,
+      );
+    })();
+  }, [state, onSaved, pendingLogo]);
 
   useEffect(() => {
     if (state.status === "error") {
@@ -210,6 +261,20 @@ export function StoreForm({
               error={errors.start_date}
             />
           </div>
+
+          {/*
+            Fora do fluxo do formulário: a imagem não viaja no FormData, sobe
+            direto para o bucket. Por isso fica no fim, depois dos campos que
+            de fato são gravados pelo submit.
+          */}
+          <StoreLogoField
+            storeId={store?.id ?? null}
+            storeName={store?.name ?? ""}
+            logoPath={store?.logo_path ?? null}
+            pendingFile={pendingLogo}
+            onPendingFileChange={setPendingLogo}
+            disabled={pending}
+          />
 
           <TextareaField
             label="Observações"

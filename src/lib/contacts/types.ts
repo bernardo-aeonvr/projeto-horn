@@ -8,13 +8,26 @@ import type { SubmittedValues } from "@/lib/form-values";
  * (spec, seções 8.1 e 27, regra 4).
  */
 
-/** Valores do enum public.contact_channel, na ordem do banco. */
+/**
+ * Valores do enum public.contact_channel, na ordem do banco.
+ *
+ * Esta é a definição canônica de canal no produto: formulário, filtro da
+ * listagem, filtro do dashboard e validação leem daqui. Adicionar um canal é
+ * acrescentar o valor aqui e no enum do banco — nenhuma tela mantém a própria
+ * lista.
+ *
+ * `event` é o canal de contatos feitos em evento — visita, tour ou palestra na
+ * loja. Não existe entidade de evento: o contato continua sendo um contato, com
+ * profissional, data, lojas apresentadas e observação, e o que aconteceu no
+ * evento é descrito na observação.
+ */
 export const CONTACT_CHANNELS = [
   "whatsapp",
   "phone",
   "instagram",
   "email",
   "other",
+  "event",
 ] as const;
 
 export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
@@ -25,6 +38,7 @@ export const CHANNEL_LABELS: Record<ContactChannel, string> = {
   instagram: "Instagram",
   email: "E-mail",
   other: "Outro",
+  event: "Evento",
 };
 
 /** Loja apresentada em um contato — snapshot histórico. */

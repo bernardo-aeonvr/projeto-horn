@@ -46,6 +46,8 @@ type OpportunitiesManagerProps = {
   /** Todas as lojas, para o filtro da listagem. */
   allStores: OpportunityStore[];
   professionalName: string | null;
+  /** Loja do próprio usuário de loja, para o recorte da exportação dele. */
+  storeName: string | null;
   filters: OpportunityFilters;
   filteredCount: number;
   totalCount: number;
@@ -71,6 +73,7 @@ export function OpportunitiesManager({
   activeStores,
   allStores,
   professionalName,
+  storeName,
   filters,
   filteredCount,
   totalCount,
@@ -215,6 +218,7 @@ export function OpportunitiesManager({
           professionalName={professionalName}
           resultCount={filteredCount}
           statusCounts={statusCounts}
+          storeName={storeName}
           onNewOpportunity={() => setPanel({ mode: "new" })}
         />
       ) : null}

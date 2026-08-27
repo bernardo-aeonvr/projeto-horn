@@ -286,7 +286,7 @@ export function OpportunitiesToolbar({
                 page: 1,
               })
             }
-            className="inline-flex items-center gap-1 self-start rounded text-sm font-medium text-graphite-500 transition-colors hover:text-graphite-900"
+            className="inline-flex items-center gap-1 self-start sm:self-auto rounded text-sm font-medium text-graphite-500 transition-colors hover:text-graphite-900"
           >
             <X className="size-3.5" aria-hidden />
             Limpar filtros

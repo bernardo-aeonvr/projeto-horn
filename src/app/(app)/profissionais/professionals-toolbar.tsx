@@ -171,7 +171,7 @@ export function ProfessionalsToolbar({
         <div
           role="group"
           aria-label="Filtrar por status"
-          className="inline-flex self-start rounded-lg border border-graphite-200 bg-white p-0.5"
+          className="inline-flex self-start sm:self-auto rounded-lg border border-graphite-200 bg-white p-0.5"
         >
           {PROFESSIONAL_STATUS_FILTERS.map((status) => {
             const active = filters.status === status;
@@ -218,7 +218,7 @@ export function ProfessionalsToolbar({
                 page: 1,
               })
             }
-            className="inline-flex items-center gap-1 self-start rounded text-sm font-medium text-graphite-500 transition-colors hover:text-graphite-900"
+            className="inline-flex items-center gap-1 self-start sm:self-auto rounded text-sm font-medium text-graphite-500 transition-colors hover:text-graphite-900"
           >
             <X className="size-3.5" aria-hidden />
             Limpar filtros

@@ -2,7 +2,7 @@
 
 import { SearchX, TriangleAlert, Users } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
@@ -11,10 +11,13 @@ import { SlideOver } from "@/components/ui/slide-over";
 import { useToast } from "@/components/ui/toast";
 import type { OpportunityStore } from "@/lib/opportunities/types";
 import { setProfessionalActiveAction } from "@/lib/professionals/actions";
+import { mergeOptionNames } from "@/lib/professionals/format";
 import {
   PAGE_SIZE,
   type Professional,
   type ProfessionalFilters,
+  type ProfessionalOptionKind,
+  type ProfessionalOptions,
   type Region,
   type Segment,
 } from "@/lib/professionals/types";
@@ -32,6 +35,8 @@ type ProfessionalsManagerProps = {
   regions: Region[];
   /** Lojas ativas hoje: marcadas no contato e escolhidas no projeto. */
   activeStores: OpportunityStore[];
+  /** Empresas e cargos já cadastrados, para os seletores do formulário. */
+  options: ProfessionalOptions;
   filters: ProfessionalFilters;
   filteredCount: number;
   totalCount: number;
@@ -55,6 +60,7 @@ export function ProfessionalsManager({
   segments,
   regions,
   activeStores,
+  options,
   filters,
   filteredCount,
   totalCount,
@@ -68,10 +74,41 @@ export function ProfessionalsManager({
   const { showToast } = useToast();
 
   const [panel, setPanel] = useState<Panel>(null);
+  /*
+    Opções criadas nesta sessão.
+
+    A action revalida a rota e o servidor devolve a lista completa em seguida,
+    mas o painel não espera por isso: sem este estado, a empresa recém-criada
+    sumiria do seletor do próximo profissional até a página recarregar. Não
+    precisa ser limpo — quando os dados novos chegam, `mergeOptionNames`
+    descarta a repetição.
+  */
+  const [createdOptions, setCreatedOptions] = useState<
+    { kind: ProfessionalOptionKind; name: string }[]
+  >([]);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const closePanel = useCallback(() => setPanel(null), []);
+
+  const formOptions = useMemo<ProfessionalOptions>(() => {
+    const created = (kind: ProfessionalOptionKind) =>
+      createdOptions
+        .filter((option) => option.kind === kind)
+        .map((option) => option.name);
+
+    return {
+      company: mergeOptionNames(options.company, created("company")),
+      job_role: mergeOptionNames(options.job_role, created("job_role")),
+    };
+  }, [options, createdOptions]);
+
+  const handleOptionCreated = useCallback(
+    (kind: ProfessionalOptionKind, name: string) => {
+      setCreatedOptions((current) => [...current, { kind, name }]);
+    },
+    [],
+  );
 
   const handleSaved = useCallback(
     (message: string) => {
@@ -136,6 +173,7 @@ export function ProfessionalsManager({
           filters={filters}
           segments={segments}
           regions={regions}
+          options={formOptions}
           resultCount={filteredCount}
           onNewProfessional={() => setPanel({ mode: "new" })}
         />
@@ -259,6 +297,8 @@ export function ProfessionalsManager({
             professional={panel.mode === "new" ? null : panel.professional}
             segments={segments}
             regions={regions}
+            options={formOptions}
+            onOptionCreated={handleOptionCreated}
             onSaved={handleSaved}
             onCancel={closePanel}
           />

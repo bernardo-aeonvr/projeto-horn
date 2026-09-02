@@ -7,9 +7,15 @@ import { authorizeAdminAction } from "@/lib/auth/session";
 import { collectFormValues, type SubmittedValues } from "@/lib/form-values";
 import { createClient } from "@/lib/supabase/server";
 
+import { DEFAULT_JOB_ROLES, optionKey } from "./format";
 import { listProfessionalsForExport } from "./queries";
-import type { ProfessionalFilters, ProfessionalFormState } from "./types";
-import { parseProfessionalForm } from "./validation";
+import {
+  parseProfessionalOptionKind,
+  type ProfessionalFilters,
+  type ProfessionalFormState,
+  type ProfessionalOptionKind,
+} from "./types";
+import { MAX_OPTION_NAME, parseProfessionalForm } from "./validation";
 
 const PROFISSIONAIS_PATH = "/profissionais";
 const DASHBOARD_PATH = "/dashboard";
@@ -100,6 +106,8 @@ async function saveProfessional(
     p_name: payload.name,
     p_segment_id: payload.segment_id,
     p_region_ids: parsed.regionIds,
+    p_company: payload.company,
+    p_job_role: payload.job_role,
     p_email: payload.email,
     p_instagram: payload.instagram,
     p_phone: payload.phone,
@@ -193,6 +201,96 @@ export async function setProfessionalActiveAction(
     ok: true,
     message: `Profissional "${data[0].name}" ${isActive ? "ativado" : "inativado"}.`,
   };
+}
+
+// --------------------------------------------------------------------------
+// Listas de empresa e cargo
+// --------------------------------------------------------------------------
+
+export type CreateProfessionalOptionResult =
+  | { ok: true; name: string; created: boolean }
+  | { ok: false; message: string };
+
+/**
+ * Cadastra uma empresa ou um cargo na lista do admin da sessão.
+ *
+ * DUPLICATA NÃO VIRA ERRO
+ *
+ * Quem digita "aliás arquitetura" onde já existe "Aliás Arquitetura" não errou
+ * — quis a mesma empresa. Então a resposta é a opção que já existe, com a
+ * grafia que já estava gravada, e o formulário segue com ela selecionada. É
+ * também o que impede a lista de encher de variações da mesma coisa.
+ *
+ * A comparação é a mesma do índice único do banco (`optionKey`), e o banco
+ * continua sendo quem decide: duas abas criando o mesmo nome ao mesmo tempo
+ * passam pela verificação daqui e colidem lá, e o 23505 é tratado como o que é
+ * — a opção existe, siga com ela.
+ *
+ * A grafia de quem cadastrou primeiro é preservada. Esta função nunca renomeia
+ * uma opção existente.
+ */
+export async function createProfessionalOptionAction(
+  kind: ProfessionalOptionKind,
+  rawName: string,
+): Promise<CreateProfessionalOptionResult> {
+  const sessionError = await requireSession();
+  if (sessionError) return { ok: false, message: sessionError };
+
+  const optionKind = parseProfessionalOptionKind(kind);
+  if (!optionKind) {
+    return { ok: false, message: "Lista inválida. Recarregue a página." };
+  }
+
+  const name = typeof rawName === "string" ? rawName.trim() : "";
+  if (!name) {
+    return { ok: false, message: "Informe um nome." };
+  }
+  if (name.length > MAX_OPTION_NAME) {
+    return { ok: false, message: `Máximo de ${MAX_OPTION_NAME} caracteres.` };
+  }
+
+  const supabase = await createClient();
+
+  // A lista cabe num seletor, então ela vem inteira e a comparação acontece
+  // aqui — com a mesma normalização usada para exibi-la, sem risco de a tela
+  // achar equivalente o que o banco acha diferente.
+  const existing = await supabase
+    .from("professional_options")
+    .select("name")
+    .eq("kind", optionKind);
+
+  if (existing.error) {
+    return { ok: false, message: translateDbError(existing.error) };
+  }
+
+  const known = (existing.data ?? []).map((row) => row.name as string);
+  // Os cargos padrão são oferecidos sem estar no banco: sem esta linha,
+  // cadastrar "Sócio" criaria uma segunda opção idêntica à que já aparece.
+  if (optionKind === "job_role") known.push(...DEFAULT_JOB_ROLES);
+
+  const match = known.find((value) => optionKey(value) === optionKey(name));
+  if (match) return { ok: true, name: match, created: false };
+
+  const inserted = await supabase
+    .from("professional_options")
+    .insert({ kind: optionKind, name })
+    .select("name")
+    .single();
+
+  if (inserted.error) {
+    // 23505: outra aba criou o mesmo nome no meio do caminho. Não é erro para
+    // quem está na tela — o valor que ele queria existe.
+    if (inserted.error.code === "23505") {
+      return { ok: true, name, created: false };
+    }
+    return { ok: false, message: translateDbError(inserted.error) };
+  }
+
+  // Para que a opção nova apareça nos outros formulários da sessão, e não só
+  // no que a criou.
+  revalidatePath(PROFISSIONAIS_PATH);
+
+  return { ok: true, name: inserted.data.name as string, created: true };
 }
 
 // --------------------------------------------------------------------------

@@ -27,6 +27,51 @@ export const BRAZILIAN_STATES = [
   "SP", "SE", "TO",
 ] as const;
 
+/**
+ * Cargos oferecidos desde sempre, sem ninguém precisar cadastrá-los.
+ *
+ * NÃO são um enum nem uma restrição: entram na lista junto com os cargos que o
+ * admin criar, e qualquer outro valor é igualmente válido. Existem porque uma
+ * lista vazia no primeiro uso obrigaria a criar "Sócio" à mão em toda conta
+ * nova — e porque estes dois cobrem a maior parte dos cadastros.
+ */
+export const DEFAULT_JOB_ROLES = ["Sócio", "Equipe"] as const;
+
+/**
+ * Chave de comparação de uma opção de empresa ou cargo.
+ *
+ * É a MESMA normalização do índice único do banco — `lower(btrim(name))` — e
+ * precisa continuar sendo. Se aqui dobrasse acento e no banco não, "Aliás" e
+ * "Alias" seriam a mesma opção para a tela e duas para o banco, e o valor
+ * gravado em um profissional poderia sumir do seletor dele.
+ */
+export function optionKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/**
+ * Junta listas de opções, sem repetir e em ordem alfabética.
+ *
+ * A primeira grafia encontrada é a que fica: o catálogo vem antes dos padrões,
+ * então uma empresa cadastrada como "Studio Forma" não é reescrita por causa
+ * de um "studio forma" vindo de outra lista.
+ */
+export function mergeOptionNames(...lists: readonly string[][]): string[] {
+  const byKey = new Map<string, string>();
+
+  for (const list of lists) {
+    for (const value of list) {
+      const name = value.trim();
+      if (!name) continue;
+
+      const key = optionKey(name);
+      if (!byKey.has(key)) byKey.set(key, name);
+    }
+  }
+
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
 /** Normaliza texto opcional: string vazia e só-espaços viram null. */
 export function emptyToNull(value: string | null | undefined): string | null {
   const trimmed = value?.trim();

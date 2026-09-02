@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { requireAdminUser } from "@/lib/auth/session";
 import { listOpportunityStoreOptions } from "@/lib/opportunities/queries";
 import {
+  listProfessionalOptions,
   listProfessionals,
   listRegions,
   listSegments,
@@ -23,6 +24,8 @@ type ProfissionaisPageProps = {
     status?: string;
     segmento?: string;
     regiao?: string;
+    empresa?: string;
+    cargo?: string;
     pagina?: string;
   }>;
 };
@@ -42,13 +45,17 @@ export default async function ProfissionaisPage({
     status: parseProfessionalStatus(params.status),
     segmentId: params.segmento?.trim() ?? "",
     regionId: params.regiao?.trim() ?? "",
+    company: params.empresa?.trim() ?? "",
+    jobRole: params.cargo?.trim() ?? "",
     page: parsePage(params.pagina),
   };
 
-  const [list, segments, regions, activeStores] = await Promise.all([
+  const [list, segments, regions, options, activeStores] = await Promise.all([
     listProfessionals(filters),
     listSegments(),
     listRegions(),
+    // Empresas e cargos já usados: alimentam os dois seletores do formulário.
+    listProfessionalOptions(),
     // Usadas na ficha para marcar as lojas apresentadas em um contato e para
     // escolher a loja de um projeto novo. O percentual de comissão vem junto
     // para o formulário de projeto explicar o que ficará gravado.
@@ -61,6 +68,7 @@ export default async function ProfissionaisPage({
       segments={segments}
       regions={regions}
       activeStores={activeStores}
+      options={options}
       filters={filters}
       filteredCount={list.filteredCount}
       totalCount={list.totalCount}

@@ -146,6 +146,18 @@ function describeFilters(
     slugParts.push(region.slug);
   }
 
+  /*
+    Empresa e cargo chegam como o próprio nome, não como id: não há lista para
+    consultar, é o texto que a linha guarda.
+
+    Eles entram na descrição, e não no nome do arquivo: o sufixo do arquivo é
+    montado com os `slug` do catálogo — que empresa e cargo, sendo texto livre,
+    não têm. Inventar uma slugificação aqui criaria uma segunda normalização
+    justamente onde a etapa anterior tomou o cuidado de ter só uma.
+  */
+  if (filters.company) parts.push(`Empresa = ${filters.company}`);
+  if (filters.jobRole) parts.push(`Cargo = ${filters.jobRole}`);
+
   if (filters.status !== "todos") {
     parts.push(`Status = ${filters.status === "ativos" ? "Ativos" : "Inativos"}`);
     slugParts.push(filters.status);

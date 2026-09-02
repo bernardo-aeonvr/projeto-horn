@@ -22,14 +22,22 @@ import {
 import {
   initialProfessionalFormState,
   type Professional,
+  type ProfessionalOptionKind,
+  type ProfessionalOptions,
   type Region,
   type Segment,
 } from "@/lib/professionals/types";
+
+import { ProfessionalOptionField } from "./professional-option-field";
 
 type ProfessionalFormProps = {
   professional: Professional | null;
   segments: Segment[];
   regions: Region[];
+  /** Empresas e cargos já cadastrados, para os seletores. */
+  options: ProfessionalOptions;
+  /** Sobe a opção recém-criada, para valer nos próximos formulários. */
+  onOptionCreated: (kind: ProfessionalOptionKind, name: string) => void;
   onSaved: (message: string) => void;
   onCancel: () => void;
 };
@@ -40,6 +48,8 @@ export function ProfessionalForm({
   professional,
   segments,
   regions,
+  options,
+  onOptionCreated,
   onSaved,
   onCancel,
 }: ProfessionalFormProps) {
@@ -121,6 +131,47 @@ export function ProfessionalForm({
               required
               autoFocus
             />
+
+            {/*
+              Empresa e cargo andam juntos: um é onde a pessoa trabalha, o
+              outro é o que ela é lá dentro. Os dois continuam opcionais — o
+              autônomo não preenche nenhum.
+            */}
+            <div className="grid gap-5 sm:grid-cols-2">
+              <ProfessionalOptionField
+                kind="company"
+                label="Empresa"
+                name="company"
+                options={options.company}
+                defaultValue={submittedText(
+                  sent,
+                  "company",
+                  professional?.company ?? "",
+                )}
+                error={errors.company}
+                dialogTitle="Nova empresa"
+                addLabel="Adicionar empresa"
+                placeholder="Escritório, estúdio ou construtora"
+                onCreated={onOptionCreated}
+              />
+
+              <ProfessionalOptionField
+                kind="job_role"
+                label="Cargo"
+                name="job_role"
+                options={options.job_role}
+                defaultValue={submittedText(
+                  sent,
+                  "job_role",
+                  professional?.job_role ?? "",
+                )}
+                error={errors.job_role}
+                dialogTitle="Novo cargo"
+                addLabel="Adicionar cargo"
+                placeholder="Sócio, Diretor, Coordenador..."
+                onCreated={onOptionCreated}
+              />
+            </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <SelectField

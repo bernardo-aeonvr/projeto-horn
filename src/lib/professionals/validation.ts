@@ -5,6 +5,8 @@ import type { ProfessionalFormField } from "./types";
 export type ProfessionalPayload = {
   name: string;
   segment_id: string;
+  company: string | null;
+  job_role: string | null;
   email: string | null;
   instagram: string | null;
   phone: string | null;
@@ -25,6 +27,9 @@ type ValidationResult =
 const MAX_NAME = 160;
 const MAX_SHORT_TEXT = 160;
 const MAX_NOTES = 2000;
+
+/** Teto de uma opção de empresa ou cargo. Mesmo dos demais campos curtos. */
+export const MAX_OPTION_NAME = MAX_SHORT_TEXT;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_PATTERN =
@@ -59,6 +64,18 @@ export function parseProfessionalForm(formData: FormData): ValidationResult {
     fieldErrors.segment_id = "Selecione o segmento.";
   } else if (!UUID_PATTERN.test(segmentId)) {
     fieldErrors.segment_id = "Segmento inválido.";
+  }
+
+  // Empresa é texto livre e opcional: o profissional pode ser autônomo.
+  const company = read(formData, "company");
+  if (company.length > MAX_SHORT_TEXT) {
+    fieldErrors.company = `Máximo de ${MAX_SHORT_TEXT} caracteres.`;
+  }
+
+  // Cargo, como empresa, é um valor escolhido na lista — e igualmente opcional.
+  const jobRole = read(formData, "job_role");
+  if (jobRole.length > MAX_SHORT_TEXT) {
+    fieldErrors.job_role = `Máximo de ${MAX_SHORT_TEXT} caracteres.`;
   }
 
   // Validação deliberadamente leve: e-mail só precisa parecer um e-mail.
@@ -150,6 +167,8 @@ export function parseProfessionalForm(formData: FormData): ValidationResult {
     payload: {
       name,
       segment_id: segmentId,
+      company: emptyToNull(company),
+      job_role: emptyToNull(jobRole),
       email: emptyToNull(email)?.toLowerCase() ?? null,
       instagram: emptyToNull(instagram),
       phone: emptyToNull(phone),

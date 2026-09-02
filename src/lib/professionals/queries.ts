@@ -1,11 +1,14 @@
 import { RANGE_NOT_SATISFIABLE } from "@/lib/pagination";
 import { createClient } from "@/lib/supabase/server";
 
+import { DEFAULT_JOB_ROLES, mergeOptionNames } from "./format";
 import {
+  EMPTY_PROFESSIONAL_OPTIONS,
   PAGE_SIZE,
   PROFESSIONAL_COLUMNS,
   type Professional,
   type ProfessionalFilters,
+  type ProfessionalOptions,
   type Region,
   type Segment,
 } from "./types";
@@ -76,6 +79,26 @@ function filteredQuery(
   if (filters.status === "inativos") query = query.eq("is_active", false);
 
   if (filters.segmentId) query = query.eq("segment_id", filters.segmentId);
+
+  /*
+    Empresa e cargo são texto na linha do profissional, não referência.
+
+    `ilike` sem curinga compara o valor inteiro sem diferenciar caixa — a mesma
+    equivalência do índice único das opções (`lower(btrim(name))`) e do
+    `optionKey` da tela. É o que garante que um cadastro gravado como "ALIÁS
+    ARQUITETURA" continue aparecendo ao filtrar por "Aliás Arquitetura", em vez
+    de sumir da lista sem explicação.
+
+    O escape é o mesmo da busca por nome: sem ele, um "%" no nome da empresa
+    viraria curinga e o filtro traria gente demais.
+  */
+  if (filters.company) {
+    query = query.ilike("company", escapeLikePattern(filters.company));
+  }
+
+  if (filters.jobRole) {
+    query = query.ilike("job_role", escapeLikePattern(filters.jobRole));
+  }
 
   // Basta o profissional ter a região entre as dele.
   if (filters.regionId) {
@@ -341,6 +364,45 @@ export async function listProfessionalNames(
   return new Map(
     (data as { id: string; name: string }[]).map((row) => [row.id, row.name]),
   );
+}
+
+/**
+ * Empresas e cargos já cadastrados, para os seletores do formulário.
+ *
+ * Uma consulta só, das duas listas: `professional_options` é pequena por
+ * natureza (é a lista que cabe num seletor) e a RLS já a recorta no dono da
+ * sessão — o que um admin cadastrou não aparece para o outro.
+ *
+ * Os cargos padrão entram aqui, e não no banco: uma conta nova precisa oferecer
+ * "Sócio" e "Equipe" sem depender de seed nenhum. `mergeOptionNames` cuida de
+ * não repetir quando eles também já existirem no catálogo.
+ *
+ * Falha de leitura devolve listas vazias em vez de derrubar a página: sem
+ * opções o formulário ainda cadastra profissional — só não sugere nada.
+ */
+export async function listProfessionalOptions(): Promise<ProfessionalOptions> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("professional_options")
+    .select("kind, name");
+
+  if (error || !data) {
+    console.error("[profissionais] falha ao carregar empresas e cargos", error);
+    return {
+      ...EMPTY_PROFESSIONAL_OPTIONS,
+      job_role: mergeOptionNames([...DEFAULT_JOB_ROLES]),
+    };
+  }
+
+  const rows = data as { kind: string; name: string }[];
+  const namesOf = (kind: string) =>
+    rows.filter((row) => row.kind === kind).map((row) => row.name);
+
+  return {
+    company: mergeOptionNames(namesOf("company")),
+    job_role: mergeOptionNames(namesOf("job_role"), [...DEFAULT_JOB_ROLES]),
+  };
 }
 
 /** Catálogo oficial de segmentos (spec, seção 7.2). Ids vêm do banco. */

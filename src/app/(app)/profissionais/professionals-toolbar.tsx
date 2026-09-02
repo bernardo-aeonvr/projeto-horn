@@ -9,6 +9,7 @@ import { inputBaseClass } from "@/components/ui/text-field";
 import {
   PROFESSIONAL_STATUS_FILTERS,
   type ProfessionalFilters,
+  type ProfessionalOptions,
   type ProfessionalStatusFilter,
   type Region,
   type Segment,
@@ -29,6 +30,8 @@ type ProfessionalsToolbarProps = {
   filters: ProfessionalFilters;
   segments: Segment[];
   regions: Region[];
+  /** As mesmas listas do formulário: filtrar não tem catálogo próprio. */
+  options: ProfessionalOptions;
   resultCount: number;
   onNewProfessional: () => void;
 };
@@ -43,6 +46,7 @@ export function ProfessionalsToolbar({
   filters,
   segments,
   regions,
+  options,
   resultCount,
   onNewProfessional,
 }: ProfessionalsToolbarProps) {
@@ -66,6 +70,8 @@ export function ProfessionalsToolbar({
       if (merged.status !== "todos") params.set("status", merged.status);
       if (merged.segmentId) params.set("segmento", merged.segmentId);
       if (merged.regionId) params.set("regiao", merged.regionId);
+      if (merged.company) params.set("empresa", merged.company);
+      if (merged.jobRole) params.set("cargo", merged.jobRole);
       // Mudar qualquer filtro volta para a primeira página.
       if (next.page !== undefined && next.page > 1) {
         params.set("pagina", String(next.page));
@@ -93,7 +99,9 @@ export function ProfessionalsToolbar({
     filters.q !== "" ||
     filters.status !== "todos" ||
     filters.segmentId !== "" ||
-    filters.regionId !== "";
+    filters.regionId !== "" ||
+    filters.company !== "" ||
+    filters.jobRole !== "";
 
   return (
     <div className="mb-5 space-y-4">
@@ -146,6 +154,50 @@ export function ProfessionalsToolbar({
           {segments.map((segment) => (
             <option key={segment.id} value={segment.id}>
               {segment.name}
+            </option>
+          ))}
+        </select>
+
+        {/*
+          Empresa e cargo ficam ao lado do segmento — os três respondem "quem é
+          esta pessoa". Região e status, que são "onde atua" e "está na
+          carteira", seguem depois, na ordem em que já estavam.
+
+          As opções são as mesmas do formulário: uma empresa criada pelo "+"
+          aparece aqui sem nenhum cadastro à parte.
+        */}
+        <select
+          value={filters.company}
+          onChange={(event) => applyFilters({ company: event.target.value })}
+          aria-label="Filtrar por empresa"
+          className={cn(
+            inputBaseClass,
+            "cursor-pointer sm:w-56",
+            filters.company && "border-gold-300 bg-gold-50/60",
+          )}
+        >
+          <option value="">Todas as empresas</option>
+          {options.company.map((company) => (
+            <option key={company} value={company}>
+              {company}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={filters.jobRole}
+          onChange={(event) => applyFilters({ jobRole: event.target.value })}
+          aria-label="Filtrar por cargo"
+          className={cn(
+            inputBaseClass,
+            "cursor-pointer sm:w-48",
+            filters.jobRole && "border-gold-300 bg-gold-50/60",
+          )}
+        >
+          <option value="">Todos os cargos</option>
+          {options.job_role.map((role) => (
+            <option key={role} value={role}>
+              {role}
             </option>
           ))}
         </select>
@@ -215,6 +267,8 @@ export function ProfessionalsToolbar({
                 status: "todos",
                 segmentId: "",
                 regionId: "",
+                company: "",
+                jobRole: "",
                 page: 1,
               })
             }

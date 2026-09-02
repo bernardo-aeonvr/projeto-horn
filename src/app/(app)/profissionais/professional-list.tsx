@@ -186,8 +186,16 @@ export function ProfessionalList({
 
   return (
     <>
-      {/* Desktop — tabela */}
-      <div className="hidden overflow-hidden rounded-card border border-graphite-200 bg-white shadow-card lg:block">
+      {/*
+        Desktop — tabela
+
+        `overflow-x-auto` e não `overflow-hidden`: com sete colunas a tabela
+        pede ~850px e o cartão tem 679px num monitor de 1024 com o menu aberto.
+        Sem isto quem rola de lado é a PÁGINA inteira, e as ações da linha ficam
+        cortadas fora da tela. Rolando dentro do próprio cartão, o cabeçalho, os
+        filtros e a paginação continuam no lugar.
+      */}
+      <div className="hidden overflow-x-auto rounded-card border border-graphite-200 bg-white shadow-card lg:block">
         <table className="w-full border-collapse text-sm">
           <caption className="sr-only">
             Profissionais da carteira da HORN
@@ -195,6 +203,7 @@ export function ProfessionalList({
           <thead>
             <tr className="border-b border-graphite-200 bg-graphite-50/70 text-left">
               <Th>Profissional</Th>
+              <Th>Empresa e cargo</Th>
               <Th>Segmento</Th>
               <Th>Regiões</Th>
               <Th>Telefone</Th>
@@ -226,6 +235,14 @@ export function ProfessionalList({
                   {professional.email ? (
                     <p className="mt-0.5 truncate text-xs text-graphite-500">
                       {professional.email}
+                    </p>
+                  ) : null}
+                </td>
+                <td className="px-4 py-3.5 text-graphite-600">
+                  {professional.company ?? "—"}
+                  {professional.job_role ? (
+                    <p className="mt-0.5 text-xs text-graphite-500">
+                      {professional.job_role}
                     </p>
                   ) : null}
                 </td>
@@ -280,6 +297,18 @@ export function ProfessionalList({
             </div>
 
             <dl className="mt-4 space-y-3 border-t border-graphite-100 pt-3.5 text-sm">
+              <div>
+                <dt className="text-xs text-graphite-500">Empresa</dt>
+                <dd className="text-graphite-800">
+                  {professional.company ?? "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-graphite-500">Cargo</dt>
+                <dd className="text-graphite-800">
+                  {professional.job_role ?? "—"}
+                </dd>
+              </div>
               <div>
                 <dt className="text-xs text-graphite-500">Regiões</dt>
                 <dd className="mt-1">

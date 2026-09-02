@@ -2,7 +2,15 @@
 
 // Esta versão do lucide não traz mais ícones de marca, então o Instagram é
 // representado pelo arroba, que é como o perfil é escrito na interface.
-import { AtSign, FolderPlus, Mail, Pencil, PhoneCall } from "lucide-react";
+import {
+  AtSign,
+  Briefcase,
+  Building2,
+  FolderPlus,
+  Mail,
+  Pencil,
+  PhoneCall,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +45,11 @@ export function ProfessionalDetails({
   const instagramUrl = toInstagramUrl(professional.instagram);
   const instagramHandle = toInstagramHandle(professional.instagram);
 
+  const affiliation = [professional.company, professional.job_role]
+    .filter((value) => value?.trim())
+    .join(" · ");
+  const AffiliationIcon = professional.company ? Building2 : Briefcase;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim px-5 py-5 sm:px-6">
@@ -48,6 +61,22 @@ export function ProfessionalDetails({
             </span>
           ) : null}
         </div>
+
+        {/*
+          Empresa e cargo ficam logo abaixo dos rótulos, e não numa das seções:
+          são identificação, como o nome no cabeçalho do painel. Uma linha só —
+          "Aliás Arquitetura · Sócio" —, e ela some quando não há nenhum dos
+          dois: o profissional é autônomo, não é dado faltando.
+        */}
+        {affiliation ? (
+          <p className="mt-3 flex items-center gap-1.5 text-sm text-graphite-600">
+            <AffiliationIcon
+              className="size-4 shrink-0 text-graphite-400"
+              aria-hidden
+            />
+            {affiliation}
+          </p>
+        ) : null}
 
         {whatsAppUrl || instagramUrl || professional.email ? (
           <div className="mt-5 flex flex-wrap gap-2">

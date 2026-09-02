@@ -70,6 +70,13 @@ type SelectFieldProps = Omit<ComponentProps<"select">, "id"> & {
   optional?: boolean;
   hint?: ReactNode;
   error?: string;
+  /**
+   * Controle ao lado do select, dentro da mesma linha — ex.: o botão de
+   * adicionar opção. Fica fora do `<select>` para não virar uma opção dele, e
+   * dentro do campo para o rótulo, o hint e o erro continuarem valendo para os
+   * dois.
+   */
+  trailing?: ReactNode;
 };
 
 /**
@@ -86,6 +93,7 @@ export function SelectField({
   optional,
   hint,
   error,
+  trailing,
   className,
   children,
   defaultValue,
@@ -124,6 +132,31 @@ export function SelectField({
     return () => clearTimeout(timer);
   });
 
+  const control = (
+    <select
+      ref={selectRef}
+      id={id}
+      value={value}
+      onChange={(event) => {
+        if (!isControlled) setInternalValue(event.target.value);
+        onChange?.(event);
+      }}
+      aria-invalid={error ? true : undefined}
+      aria-describedby={hint || error ? `${id}-message` : undefined}
+      className={cn(
+        inputBaseClass,
+        "cursor-pointer appearance-none bg-[length:1.1rem] bg-[right_0.75rem_center] bg-no-repeat pr-10",
+        // Seta desenhada em SVG para não depender da renderização do sistema.
+        "bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke-width%3D%222%22%20stroke%3D%22%239aa3ac%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22m6%209%206%206%206-6%22/%3E%3C/svg%3E')]",
+        error && inputErrorClass,
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </select>
+  );
+
   return (
     <FieldShell
       id={id}
@@ -132,28 +165,14 @@ export function SelectField({
       hint={hint}
       error={error}
     >
-      <select
-        ref={selectRef}
-        id={id}
-        value={value}
-        onChange={(event) => {
-          if (!isControlled) setInternalValue(event.target.value);
-          onChange?.(event);
-        }}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={hint || error ? `${id}-message` : undefined}
-        className={cn(
-          inputBaseClass,
-          "cursor-pointer appearance-none bg-[length:1.1rem] bg-[right_0.75rem_center] bg-no-repeat pr-10",
-          // Seta desenhada em SVG para não depender da renderização do sistema.
-          "bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke-width%3D%222%22%20stroke%3D%22%239aa3ac%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22m6%209%206%206%206-6%22/%3E%3C/svg%3E')]",
-          error && inputErrorClass,
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </select>
+      {trailing ? (
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">{control}</div>
+          {trailing}
+        </div>
+      ) : (
+        control
+      )}
     </FieldShell>
   );
 }

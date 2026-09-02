@@ -1,14 +1,18 @@
 import {
   emptyToNull,
+  MAX_RESPONSIBLES,
+  normalizeResponsibles,
   parseCurrencyInput,
   parsePercentInput,
 } from "./format";
-import type { StoreFormField } from "./types";
+import type { StoreFormField, StoreResponsible } from "./types";
 
 /** Payload já normalizado, pronto para ir ao banco. */
 export type StorePayload = {
   name: string;
   category: string | null;
+  responsibles: StoreResponsible[];
+  /** Espelho do nome do primeiro responsável, para a coluna legada. */
   contact_name: string | null;
   phone: string | null;
   is_active: boolean;
@@ -54,9 +58,37 @@ export function parseStoreForm(formData: FormData): ValidationResult {
     fieldErrors.category = `Máximo de ${MAX_SHORT_TEXT} caracteres.`;
   }
 
-  const contactName = read(formData, "contact_name");
-  if (contactName.length > MAX_SHORT_TEXT) {
-    fieldErrors.contact_name = `Máximo de ${MAX_SHORT_TEXT} caracteres.`;
+  /*
+    Responsáveis: dois campos repetidos, um por coluna do formulário.
+
+    O FormData não tem estrutura aninhada, então nome e telefone chegam em duas
+    listas e são casados aqui pela posição. O pareamento é seguro porque quem
+    monta o formulário garante a invariante: cada linha renderiza SEMPRE os dois
+    inputs, e remover uma linha remove os dois juntos. Ainda assim o `?? ""`
+    protege contra listas de tamanhos diferentes — na dúvida, o responsável
+    entra sem telefone em vez de herdar o de outra pessoa.
+
+    A partir daqui os dois viajam grudados: `normalizeResponsibles` devolve
+    objetos, e é isso que vai para o banco.
+  */
+  const responsibleNames = formData.getAll("responsible_names").map(String);
+  const responsiblePhones = formData.getAll("responsible_phones").map(String);
+
+  const responsibles = normalizeResponsibles(
+    responsibleNames.map((name, index) => ({
+      name,
+      phone: responsiblePhones[index] ?? "",
+    })),
+  );
+
+  if (responsibles.some((item) => item.name.length > MAX_SHORT_TEXT)) {
+    fieldErrors.responsibles = `Máximo de ${MAX_SHORT_TEXT} caracteres por nome.`;
+  } else if (
+    responsibles.some((item) => (item.phone ?? "").length > MAX_SHORT_TEXT)
+  ) {
+    fieldErrors.responsibles = `Máximo de ${MAX_SHORT_TEXT} caracteres por telefone.`;
+  } else if (responsibles.length > MAX_RESPONSIBLES) {
+    fieldErrors.responsibles = `Máximo de ${MAX_RESPONSIBLES} responsáveis.`;
   }
 
   const phone = read(formData, "phone");
@@ -120,7 +152,9 @@ export function parseStoreForm(formData: FormData): ValidationResult {
     payload: {
       name,
       category: emptyToNull(category),
-      contact_name: emptyToNull(contactName),
+      responsibles,
+      // A coluna antiga segue o nome do primeiro: ver migrations 0017 e 0018.
+      contact_name: responsibles[0]?.name ?? null,
       phone: emptyToNull(phone),
       is_active: formData.get("is_active") !== "false",
       monthly_fixed_fee:

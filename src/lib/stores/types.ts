@@ -6,10 +6,32 @@ import type { SubmittedValues } from "@/lib/form-values";
  * Os nomes dos campos são exatamente os do banco para evitar uma camada de
  * tradução desnecessária entre a query e a UI.
  */
+/**
+ * Uma pessoa que responde pela loja: sócio, gerente, quem atende a HORN.
+ *
+ * Nome e telefone andam JUNTOS de propósito. Duas listas paralelas casariam os
+ * dois pela posição, e bastaria remover um nome sem remover o telefone certo
+ * para o número de uma pessoa aparecer no nome de outra.
+ *
+ * Não é usuário da plataforma, não é contato e não é profissional — é
+ * informação da loja, e só.
+ */
+export type StoreResponsible = {
+  name: string;
+  /** Opcional: a maioria dos cadastros antigos não tem. */
+  phone: string | null;
+};
+
 export type Store = {
   id: string;
   name: string;
   category: string | null;
+  /**
+   * Responsáveis da loja. Sempre lido pela função `storeResponsibles`, que
+   * cobre o legado abaixo e protege contra jsonb fora do formato.
+   */
+  responsibles: StoreResponsible[];
+  /** LEGADO: espelho do nome do primeiro responsável. Ver `storeResponsibles`. */
   contact_name: string | null;
   phone: string | null;
   is_active: boolean;
@@ -32,7 +54,7 @@ export type Store = {
 
 /** Colunas selecionadas nas listagens. Mantém a query e o tipo em sincronia. */
 export const STORE_COLUMNS =
-  "id, name, category, contact_name, phone, is_active, monthly_fixed_fee, default_commission_percent, start_date, notes, logo_path, created_at, updated_at";
+  "id, name, category, responsibles, contact_name, phone, is_active, monthly_fixed_fee, default_commission_percent, start_date, notes, logo_path, created_at, updated_at";
 
 export const STORE_STATUS_FILTERS = ["todas", "ativas", "inativas"] as const;
 export type StoreStatusFilter = (typeof STORE_STATUS_FILTERS)[number];
@@ -66,7 +88,7 @@ export function parseStatusFilter(
 export type StoreFormField =
   | "name"
   | "category"
-  | "contact_name"
+  | "responsibles"
   | "phone"
   | "monthly_fixed_fee"
   | "default_commission_percent"

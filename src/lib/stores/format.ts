@@ -125,3 +125,88 @@ export function emptyToNull(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
 }
+
+// --------------------------------------------------------------------------
+// Responsáveis da loja
+// --------------------------------------------------------------------------
+
+/** Teto de responsáveis por loja. Não é regra de negócio — é sanidade de formulário. */
+export const MAX_RESPONSIBLES = 20;
+
+/** Nome e telefone de quem responde pela loja. Espelha `StoreResponsible`. */
+type Responsible = { name: string; phone: string | null };
+
+/**
+ * Limpa uma lista de responsáveis: sem espaço nas pontas, sem quem ficou sem
+ * nome e sem a mesma pessoa duas vezes.
+ *
+ * A comparação de duplicata é pelo NOME, ignorando caixa e espaços — "Leandro
+ * Pereira" e " leandro pereira " são a mesma pessoa. O telefone não entra na
+ * comparação de propósito: duas pessoas podem dividir o telefone da loja, e
+ * isso não faz delas a mesma pessoa.
+ *
+ * Quando o mesmo nome aparece duas vezes, vence o PRIMEIRO registro inteiro —
+ * a grafia e o telefone de quem foi digitado antes. O nome de alguém não é
+ * reescrito para caber numa chave.
+ *
+ * Registro sem nome é descartado, com ou sem telefone: uma linha em branco no
+ * formulário é alguém que desistiu de digitar, e um telefone sozinho não é um
+ * responsável.
+ */
+export function normalizeResponsibles(
+  values: readonly { name: string; phone?: string | null }[],
+): Responsible[] {
+  const byName = new Map<string, Responsible>();
+
+  for (const value of values) {
+    const name = (value.name ?? "").trim();
+    if (!name) continue;
+
+    const key = name.toLowerCase();
+    if (byName.has(key)) continue;
+
+    const phone = (value.phone ?? "").trim();
+    byName.set(key, { name, phone: phone || null });
+  }
+
+  return [...byName.values()];
+}
+
+/**
+ * Os responsáveis de uma loja, venha ela de onde vier.
+ *
+ * É o único lugar que conhece a coluna legada e o formato do jsonb. Três
+ * situações, nesta ordem:
+ *
+ *   1. `responsibles` preenchido — o caso normal;
+ *   2. lista vazia e `contact_name` preenchido — loja anterior a esta feature,
+ *      ou gravada por fora da tela: o nome vira um responsável sem telefone;
+ *   3. nada — lista vazia.
+ *
+ * A leitura do jsonb é defensiva de propósito. A coluna é `jsonb` e o CHECK do
+ * banco só garante que é um array; se alguém gravar `["Leandro"]` ou um objeto
+ * sem `name`, a tela ignora o que não entende em vez de quebrar a listagem
+ * inteira de lojas.
+ */
+export function storeResponsibles(store: {
+  responsibles?: unknown;
+  contact_name?: string | null;
+}): Responsible[] {
+  const raw = Array.isArray(store.responsibles) ? store.responsibles : [];
+
+  const parsed = raw.flatMap((item): { name: string; phone: string | null }[] => {
+    if (typeof item === "string") return [{ name: item, phone: null }];
+    if (!item || typeof item !== "object") return [];
+
+    const record = item as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name : "";
+    const phone = typeof record.phone === "string" ? record.phone : null;
+
+    return [{ name, phone }];
+  });
+
+  const list = normalizeResponsibles(parsed);
+  if (list.length > 0) return list;
+
+  return normalizeResponsibles([{ name: store.contact_name ?? "", phone: null }]);
+}

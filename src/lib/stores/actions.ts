@@ -77,7 +77,10 @@ export async function createStoreAction(
       message: "Revise os campos destacados.",
       fieldErrors: parsed.fieldErrors,
       succeededAt: null,
-      values: collectFormValues(formData, []),
+      values: collectFormValues(formData, [
+        "responsible_names",
+        "responsible_phones",
+      ]),
       attemptedAt: Date.now(),
       createdId: null,
     };
@@ -132,7 +135,10 @@ export async function updateStoreAction(
       message: "Revise os campos destacados.",
       fieldErrors: parsed.fieldErrors,
       succeededAt: null,
-      values: collectFormValues(formData, []),
+      values: collectFormValues(formData, [
+        "responsible_names",
+        "responsible_phones",
+      ]),
       attemptedAt: Date.now(),
       createdId: null,
     };

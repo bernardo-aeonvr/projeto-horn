@@ -12,8 +12,12 @@ import Link from "next/link";
 import { useTransition } from "react";
 
 import type { StoreAccess } from "@/lib/stores/access";
-import { formatCurrency, formatPercent } from "@/lib/stores/format";
-import type { Store } from "@/lib/stores/types";
+import {
+  formatCurrency,
+  formatPercent,
+  storeResponsibles,
+} from "@/lib/stores/format";
+import type { Store, StoreResponsible } from "@/lib/stores/types";
 import { cn } from "@/lib/utils";
 
 type StoreListProps = {
@@ -216,7 +220,7 @@ export function StoreList({
             <tr className="border-b border-graphite-200 bg-graphite-50/70 text-left">
               <Th>Loja</Th>
               <Th>Segmento</Th>
-              <Th>Responsável</Th>
+              <Th>Responsáveis</Th>
               <Th align="right">Valor mensal</Th>
               <Th align="right">Comissão</Th>
               <Th>Acesso</Th>
@@ -254,7 +258,7 @@ export function StoreList({
                   {store.category ?? "—"}
                 </td>
                 <td className="px-4 py-3.5 text-graphite-600">
-                  {store.contact_name ?? "—"}
+                  <ResponsibleNames responsibles={storeResponsibles(store)} />
                 </td>
                 <td className="px-4 py-3.5 text-right tabular-nums text-graphite-700">
                   {formatCurrency(store.monthly_fixed_fee)}
@@ -304,7 +308,14 @@ export function StoreList({
             </div>
 
             <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-graphite-100 pt-3.5 text-sm">
-              <Cell label="Responsável" value={store.contact_name ?? "—"} />
+              <Cell
+                label="Responsáveis"
+                value={
+                  <ResponsibleContacts
+                    responsibles={storeResponsibles(store)}
+                  />
+                }
+              />
               <Cell label="Telefone" value={store.phone ?? "—"} />
               <Cell
                 label="Valor mensal"
@@ -360,11 +371,114 @@ function Th({
   );
 }
 
-function Cell({ label, value }: { label: string; value: string }) {
+function Cell({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
   return (
     <div className="min-w-0">
       <dt className="text-xs text-graphite-500">{label}</dt>
       <dd className="truncate text-graphite-800 tabular-nums">{value}</dd>
     </div>
+  );
+}
+
+/** "Leandro Pereira — (11) 99999-1111", ou só o nome quando não há telefone. */
+function describe(responsible: StoreResponsible): string {
+  return responsible.phone
+    ? `${responsible.name} — ${responsible.phone}`
+    : responsible.name;
+}
+
+/**
+ * Responsáveis em uma linha só, para a tabela.
+ *
+ * São oito colunas competindo por espaço, então aparece o primeiro nome e o
+ * resto vira "+N". O `title` traz a lista completa COM os telefones — dá para
+ * conferir quem mais responde pela loja sem abrir o formulário.
+ */
+function ResponsibleNames({
+  responsibles,
+  max = 1,
+}: {
+  responsibles: StoreResponsible[];
+  max?: number;
+}) {
+  if (responsibles.length === 0) {
+    return <span className="text-graphite-400">—</span>;
+  }
+
+  const hidden = responsibles.length - max;
+
+  return (
+    <span
+      className="inline-flex items-baseline gap-1"
+      title={responsibles.map(describe).join("\n")}
+    >
+      <span className="min-w-0 truncate">
+        {responsibles
+          .slice(0, max)
+          .map((item) => item.name)
+          .join(", ")}
+      </span>
+      {hidden > 0 ? (
+        <span className="shrink-0 rounded-md bg-graphite-100 px-1.5 py-0.5 text-xs text-graphite-500">
+          +{hidden}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** Máximo de responsáveis exibidos no card antes de virar "+N". */
+const CARD_RESPONSIBLES = 2;
+
+/**
+ * Responsáveis do card, com o telefone de cada um.
+ *
+ * O card tem mais espaço que a célula da tabela, e é aqui que o telefone
+ * importa: é a tela que se usa no celular, do lado de fora da loja. Cada
+ * pessoa ocupa uma linha, e o telefone vai embaixo do nome em texto menor —
+ * o mesmo desenho do e-mail sob o nome em Profissionais.
+ *
+ * Texto, e não link: nenhum telefone de loja é clicável em Horn hoje, e criar
+ * a primeira exceção aqui seria inventar um comportamento novo.
+ */
+function ResponsibleContacts({
+  responsibles,
+}: {
+  responsibles: StoreResponsible[];
+}) {
+  if (responsibles.length === 0) {
+    return <span className="text-graphite-400">—</span>;
+  }
+
+  const visible = responsibles.slice(0, CARD_RESPONSIBLES);
+  const hidden = responsibles.length - visible.length;
+
+  return (
+    <span className="block space-y-1">
+      {visible.map((item) => (
+        <span key={item.name} className="block">
+          <span className="block truncate">{item.name}</span>
+          {item.phone ? (
+            <span className="block truncate text-xs text-graphite-500">
+              {item.phone}
+            </span>
+          ) : null}
+        </span>
+      ))}
+      {hidden > 0 ? (
+        <span
+          title={responsibles.slice(CARD_RESPONSIBLES).map(describe).join("\n")}
+          className="block text-xs text-graphite-500"
+        >
+          +{hidden}
+        </span>
+      ) : null}
+    </span>
   );
 }

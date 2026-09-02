@@ -13,17 +13,53 @@ import {
 import { Button } from "@/components/ui/button";
 import { FormAlert } from "@/components/ui/form-alert";
 import { TextField } from "@/components/ui/text-field";
-import { submittedNumber, submittedText } from "@/lib/form-values";
+import {
+  submittedList,
+  submittedNumber,
+  submittedText,
+  type SubmittedValues,
+} from "@/lib/form-values";
 import {
   createStoreAction,
   setStoreLogoAction,
   updateStoreAction,
 } from "@/lib/stores/actions";
+import { storeResponsibles } from "@/lib/stores/format";
 import { buildStoreLogoPath, STORE_LOGO_BUCKET } from "@/lib/stores/logo";
 import { createClient } from "@/lib/supabase/client";
-import { initialStoreFormState, type Store } from "@/lib/stores/types";
+import {
+  initialStoreFormState,
+  type Store,
+  type StoreResponsible,
+} from "@/lib/stores/types";
 
 import { StoreLogoField } from "./store-logo-field";
+import { StoreResponsiblesField } from "./store-responsibles-field";
+
+/**
+ * Responsáveis para preencher o formulário: o que foi enviado na tentativa
+ * anterior, ou o que está gravado na loja.
+ *
+ * As duas listas do FormData voltam separadas, e é aqui que elas se juntam de
+ * novo — pela mesma posição em que foram enviadas, com o telefone faltante
+ * virando vazio em vez de herdar o do vizinho.
+ */
+function submittedResponsibles(
+  sent: SubmittedValues | null,
+  store: Store | null,
+): StoreResponsible[] {
+  if (!sent) return storeResponsibles(store ?? {});
+
+  const names = submittedList(sent, "responsible_names", []);
+  if (names.length === 0) return storeResponsibles(store ?? {});
+
+  const phones = submittedList(sent, "responsible_phones", []);
+
+  return names.map((name, index) => ({
+    name,
+    phone: phones[index] ?? "",
+  }));
+}
 
 type StoreFormProps = {
   /** Loja em edição, ou null para cadastro. */
@@ -191,30 +227,25 @@ export function StoreForm({
             </SelectField>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2">
-            <TextField
-              label="Responsável"
-              name="contact_name"
-              defaultValue={submittedText(
-                sent,
-                "contact_name",
-                store?.contact_name ?? "",
-              )}
-              placeholder="Nome do contato na loja"
-              error={errors.contact_name}
-              maxLength={120}
-            />
+          {/*
+            O telefone DA LOJA passou a ocupar a linha inteira: agora cada
+            responsável tem o seu, e o bloco abaixo precisa da largura toda
+            para caber nome e telefone na mesma linha.
+          */}
+          <TextField
+            label="Telefone"
+            name="phone"
+            type="tel"
+            defaultValue={submittedText(sent, "phone", store?.phone ?? "")}
+            placeholder="(11) 99999-9999"
+            error={errors.phone}
+            maxLength={120}
+          />
 
-            <TextField
-              label="Telefone"
-              name="phone"
-              type="tel"
-              defaultValue={submittedText(sent, "phone", store?.phone ?? "")}
-              placeholder="(11) 99999-9999"
-              error={errors.phone}
-              maxLength={120}
-            />
-          </div>
+          <StoreResponsiblesField
+            defaultValues={submittedResponsibles(sent, store)}
+            error={errors.responsibles}
+          />
 
           <fieldset className="rounded-xl border border-graphite-200 bg-graphite-50/60 p-4">
             <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-graphite-500">

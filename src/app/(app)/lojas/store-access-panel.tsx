@@ -22,6 +22,7 @@ import {
   resetStoreAccessPasswordAction,
   setStoreAccessActiveAction,
 } from "@/lib/stores/access-actions";
+import { storeResponsibles } from "@/lib/stores/format";
 import { initialStoreAccessFormState, type Store } from "@/lib/stores/types";
 
 type StoreAccessPanelProps = {
@@ -148,7 +149,13 @@ export function StoreAccessPanel({
                 label="Nome do responsável"
                 name="fullName"
                 autoComplete="off"
-                defaultValue={store.contact_name ?? ""}
+                /*
+                  Só uma conveniência de digitação: o primeiro responsável
+                  costuma ser quem vai usar o acesso. Nada aqui vincula os dois
+                  cadastros — apagar o responsável não mexe neste usuário, e
+                  criar um acesso não cria responsável.
+                */
+                defaultValue={storeResponsibles(store)[0]?.name ?? ""}
                 placeholder="Opcional"
               />
 

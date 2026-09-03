@@ -73,10 +73,15 @@ function filteredQuery(
 
   let query = supabase
     .from("professionals")
-    .select(selectColumns, { count: "exact" });
-
-  if (filters.status === "ativos") query = query.eq("is_active", true);
-  if (filters.status === "inativos") query = query.eq("is_active", false);
+    .select(selectColumns, { count: "exact" })
+    /*
+      O recorte que vem antes de qualquer filtro da tela: excluído não está na
+      carteira. Fica aqui, e não em cada chamador, porque esta função é a
+      listagem, a busca, os filtros de empresa, cargo, segmento e região, o
+      contador e a exportação — todos ao mesmo tempo. Um profissional excluído
+      não volta por nenhum deles.
+    */
+    .is("deleted_at", null);
 
   if (filters.segmentId) query = query.eq("segment_id", filters.segmentId);
 
@@ -141,7 +146,10 @@ export async function listProfessionals(
 
   const [firstAttempt, totalResponse] = await Promise.all([
     pageQuery(page),
-    supabase.from("professionals").select("id", { count: "exact", head: true }),
+    supabase
+      .from("professionals")
+      .select("id", { count: "exact", head: true })
+      .is("deleted_at", null),
   ]);
   let listResponse = firstAttempt;
 
@@ -335,10 +343,9 @@ export async function getProfessional(
  * cinco nomes (mais os empatados no quinto lugar) a resolver. Uma consulta
  * para todos, nunca uma por posição.
  *
- * Sem filtro de `is_active`, de propósito: o projeto de um profissional que
- * saiu da carteira ativa continua sendo história do período, e some do
- * relatório se o nome não vier. É a diferença para `listProfessionalOptions`,
- * que monta um seletor e por isso só oferece quem ainda está ativo.
+ * Sem recorte nenhum além dos ids, INCLUSIVE os excluídos: o projeto de quem
+ * saiu da carteira continua sendo história do período, e sumiria do relatório
+ * se o nome não viesse.
  *
  * A RLS continua mandando: `professionals_admin_read` só devolve a carteira do
  * próprio admin. Para o usuário de loja esta função não responde nada — o

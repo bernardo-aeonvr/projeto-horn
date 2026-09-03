@@ -37,7 +37,6 @@ export type Professional = {
   birthday_day: number | null;
   birthday_month: number | null;
   notes: string | null;
-  is_active: boolean;
   created_at: string;
   updated_at: string;
   /** Resolvido pelo embed do segmento. */
@@ -48,20 +47,11 @@ export type Professional = {
 
 /** Colunas de `professionals` + embed do segmento. */
 export const PROFESSIONAL_COLUMNS =
-  "id, name, segment_id, company, job_role, email, instagram, phone, address, postal_code, city, state, birthday_day, birthday_month, notes, is_active, created_at, updated_at, segment:segments(id, slug, name)";
-
-export const PROFESSIONAL_STATUS_FILTERS = [
-  "todos",
-  "ativos",
-  "inativos",
-] as const;
-export type ProfessionalStatusFilter =
-  (typeof PROFESSIONAL_STATUS_FILTERS)[number];
+  "id, name, segment_id, company, job_role, email, instagram, phone, address, postal_code, city, state, birthday_day, birthday_month, notes, created_at, updated_at, segment:segments(id, slug, name)";
 
 export type ProfessionalFilters = {
   /** Busca por nome ou e-mail. */
   q: string;
-  status: ProfessionalStatusFilter;
   /** Id do segmento, ou string vazia para todos. */
   segmentId: string;
   /** Id da região, ou string vazia para todas. */
@@ -81,14 +71,6 @@ export type ProfessionalFilters = {
 
 /** Registros por página. A base real tem ~435 profissionais e vai crescer. */
 export const PAGE_SIZE = 25;
-
-export function parseProfessionalStatus(
-  value: string | undefined,
-): ProfessionalStatusFilter {
-  return PROFESSIONAL_STATUS_FILTERS.includes(value as ProfessionalStatusFilter)
-    ? (value as ProfessionalStatusFilter)
-    : "todos";
-}
 
 export function parsePage(value: string | undefined): number {
   const parsed = Number(value);

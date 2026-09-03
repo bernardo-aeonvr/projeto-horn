@@ -10,7 +10,6 @@ import {
 } from "@/lib/professionals/queries";
 import {
   parsePage,
-  parseProfessionalStatus,
   type ProfessionalFilters,
 } from "@/lib/professionals/types";
 
@@ -21,7 +20,6 @@ export const metadata: Metadata = { title: "Profissionais" };
 type ProfissionaisPageProps = {
   searchParams: Promise<{
     q?: string;
-    status?: string;
     segmento?: string;
     regiao?: string;
     empresa?: string;
@@ -42,7 +40,6 @@ export default async function ProfissionaisPage({
   // Os filtros vivem na URL: a consulta e a paginação acontecem no banco.
   const filters: ProfessionalFilters = {
     q: params.q?.trim() ?? "",
-    status: parseProfessionalStatus(params.status),
     segmentId: params.segmento?.trim() ?? "",
     regionId: params.regiao?.trim() ?? "",
     company: params.empresa?.trim() ?? "",

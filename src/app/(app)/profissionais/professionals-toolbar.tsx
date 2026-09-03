@@ -7,22 +7,14 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { inputBaseClass } from "@/components/ui/text-field";
 import {
-  PROFESSIONAL_STATUS_FILTERS,
   type ProfessionalFilters,
   type ProfessionalOptions,
-  type ProfessionalStatusFilter,
   type Region,
   type Segment,
 } from "@/lib/professionals/types";
 import { cn } from "@/lib/utils";
 
 import { ExportProfessionalsButton } from "./export-professionals-button";
-
-const STATUS_LABELS: Record<ProfessionalStatusFilter, string> = {
-  todos: "Todos",
-  ativos: "Ativos",
-  inativos: "Inativos",
-};
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -67,7 +59,6 @@ export function ProfessionalsToolbar({
       const params = new URLSearchParams();
 
       if (merged.q.trim()) params.set("q", merged.q.trim());
-      if (merged.status !== "todos") params.set("status", merged.status);
       if (merged.segmentId) params.set("segmento", merged.segmentId);
       if (merged.regionId) params.set("regiao", merged.regionId);
       if (merged.company) params.set("empresa", merged.company);
@@ -97,7 +88,6 @@ export function ProfessionalsToolbar({
 
   const hasFilters =
     filters.q !== "" ||
-    filters.status !== "todos" ||
     filters.segmentId !== "" ||
     filters.regionId !== "" ||
     filters.company !== "" ||
@@ -160,8 +150,8 @@ export function ProfessionalsToolbar({
 
         {/*
           Empresa e cargo ficam ao lado do segmento — os três respondem "quem é
-          esta pessoa". Região e status, que são "onde atua" e "está na
-          carteira", seguem depois, na ordem em que já estavam.
+          esta pessoa". Região, que é "onde atua", segue depois, na ordem em
+          que já estava.
 
           As opções são as mesmas do formulário: uma empresa criada pelo "+"
           aparece aqui sem nenhum cadastro à parte.
@@ -220,33 +210,6 @@ export function ProfessionalsToolbar({
           ))}
         </select>
 
-        <div
-          role="group"
-          aria-label="Filtrar por status"
-          className="inline-flex self-start sm:self-auto rounded-lg border border-graphite-200 bg-white p-0.5"
-        >
-          {PROFESSIONAL_STATUS_FILTERS.map((status) => {
-            const active = filters.status === status;
-
-            return (
-              <button
-                key={status}
-                type="button"
-                aria-pressed={active}
-                onClick={() => applyFilters({ status })}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                  active
-                    ? "bg-graphite-900 text-white"
-                    : "text-graphite-600 hover:bg-graphite-50 hover:text-graphite-900",
-                )}
-              >
-                {STATUS_LABELS[status]}
-              </button>
-            );
-          })}
-        </div>
-
         <p
           aria-live="polite"
           className={cn(
@@ -264,7 +227,6 @@ export function ProfessionalsToolbar({
             onClick={() =>
               applyFilters({
                 q: "",
-                status: "todos",
                 segmentId: "",
                 regionId: "",
                 company: "",

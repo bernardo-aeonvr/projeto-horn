@@ -91,8 +91,11 @@ export default async function ProjetosPropostasPage({
 
   const [list, professionals, activeStores, allStores] = await Promise.all([
     listOpportunities(filters),
-    // O profissional filtrado entra na lista mesmo se estiver inativo, para
-    // que o nome apareça no chip do filtro.
+    /*
+      A carteira viva, mais o profissional do filtro quando há um: sem ele, o
+      chip de "Profissional = ..." ficaria sem nome se a pessoa tivesse sido
+      excluída depois de gerar o projeto que está sendo filtrado.
+    */
     listProfessionalOptions(filters.professionalId || null),
     listOpportunityStoreOptions(),
     listAllStoreOptions(),

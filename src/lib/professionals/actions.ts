@@ -19,6 +19,8 @@ import { MAX_OPTION_NAME, parseProfessionalForm } from "./validation";
 
 const PROFISSIONAIS_PATH = "/profissionais";
 const DASHBOARD_PATH = "/dashboard";
+const CONTATOS_PATH = "/contatos";
+const PROJETOS_PATH = "/projetos-propostas";
 
 function translateDbError(error: PostgrestError): string {
   switch (error.code) {
@@ -118,7 +120,6 @@ async function saveProfessional(
     p_birthday_day: payload.birthday_day,
     p_birthday_month: payload.birthday_month,
     p_notes: payload.notes,
-    p_is_active: payload.is_active,
   });
 
   if (error) return failure(translateDbError(error));
@@ -162,44 +163,102 @@ export async function updateProfessionalAction(
   return saveProfessional(id, formData);
 }
 
-export type ToggleProfessionalResult = { ok: boolean; message: string };
+export type DeleteProfessionalResult = { ok: boolean; message: string };
 
 /**
- * Ativa ou inativa um profissional.
+ * Exclui um profissional da carteira.
  *
- * Substitui a exclusão no fluxo normal: o registro precisa continuar
- * existindo para preservar contatos e oportunidades (spec, seção 7.5).
+ * Para quem usa, é uma coisa só: o profissional some. Por baixo são dois
+ * caminhos, e QUEM ESCOLHE É O BANCO.
+ *
+ * A tentativa é sempre o DELETE de verdade. As FKs de `contacts` e
+ * `opportunities` são ON DELETE RESTRICT, então o Postgres recusa (23503)
+ * exatamente quando existe histórico — e aí a exclusão vira `deleted_at`, que
+ * tira o profissional de toda a operação e deixa a linha de pé para os
+ * contatos e projetos continuarem resolvendo nome, empresa e segmento.
+ *
+ * A FK é a verificação de dependências, e é por isso que não existe uma
+ * consulta "ele tem contatos?" aqui. Uma pergunta feita antes do DELETE
+ * responderia sobre o passado: bastaria um contato ser registrado em outra aba
+ * no meio do caminho para a resposta ficar velha e o apagamento levar o
+ * histórico junto. A constraint responde no instante da gravação, e não tem
+ * como estar desatualizada.
+ *
+ * Sem histórico, o registro sai da tabela mesmo — junto com as regiões dele,
+ * por CASCADE. Nada em `professional_options` é tocado: a empresa e o cargo
+ * são listas compartilhadas, e outros profissionais usam as mesmas opções.
  */
-export async function setProfessionalActiveAction(
+export async function deleteProfessionalAction(
   id: string,
-  isActive: boolean,
-): Promise<ToggleProfessionalResult> {
+): Promise<DeleteProfessionalResult> {
   const sessionError = await requireSession();
   if (sessionError) return { ok: false, message: sessionError };
 
   const supabase = await createClient();
-  const { data, error } = await supabase
+
+  const removed = await supabase
     .from("professionals")
-    .update({ is_active: isActive })
+    .delete()
     .eq("id", id)
     .select("name");
 
-  if (error) return { ok: false, message: translateDbError(error) };
+  if (!removed.error) {
+    if (!removed.data || removed.data.length === 0) {
+      return {
+        ok: false,
+        message: "Não foi possível excluir: o profissional não existe mais.",
+      };
+    }
 
-  if (!data || data.length === 0) {
-    return {
-      ok: false,
-      message: "Não foi possível alterar o status deste profissional.",
-    };
+    return finishDelete(removed.data[0].name as string);
   }
 
+  // 23503 é a única recusa que vira soft delete: significa "existe histórico
+  // apontando para ele". Qualquer outro erro é erro mesmo.
+  if (removed.error.code !== "23503") {
+    return { ok: false, message: translateDbError(removed.error) };
+  }
+
+  const softDeleted = await supabase
+    .from("professionals")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    // Reexcluir não reescreve a data: uma aba velha clicando de novo não muda
+    // nada, e o histórico continua apontando para a exclusão original.
+    .is("deleted_at", null)
+    .select("name");
+
+  if (softDeleted.error) {
+    return { ok: false, message: translateDbError(softDeleted.error) };
+  }
+
+  if (!softDeleted.data || softDeleted.data.length === 0) {
+    /*
+      Nenhuma linha atualizada, mas o DELETE tinha chegado até a constraint —
+      ou seja, o registro existe e a RLS deixa mexer nele. Só sobra uma
+      explicação: ele já estava excluído. Não é erro; a tela só precisa
+      recarregar para parar de mostrá-lo.
+    */
+    return finishDelete(null);
+  }
+
+  return finishDelete(softDeleted.data[0].name as string);
+}
+
+/** Revalida as rotas afetadas e devolve a confirmação da exclusão. */
+function finishDelete(name: string | null): DeleteProfessionalResult {
   revalidatePath(PROFISSIONAIS_PATH);
   // A carteira alimenta os totais e a distribuição do dashboard.
   revalidatePath(DASHBOARD_PATH);
+  // O seletor de profissional das duas telas deixa de oferecê-lo.
+  revalidatePath(CONTATOS_PATH);
+  revalidatePath(PROJETOS_PATH);
 
   return {
     ok: true,
-    message: `Profissional "${data[0].name}" ${isActive ? "ativado" : "inativado"}.`,
+    message: name
+      ? `Profissional "${name}" excluído.`
+      : "Este profissional já havia sido excluído.",
   };
 }
 

@@ -1,7 +1,6 @@
 "use client";
 
-import { Loader2, Pencil, Power, PowerOff } from "lucide-react";
-import { useTransition } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 
 import { toWhatsAppUrl } from "@/lib/professionals/format";
 import type { Professional } from "@/lib/professionals/types";
@@ -13,31 +12,8 @@ type ProfessionalListProps = {
   professionals: Professional[];
   onOpenDetails: (professional: Professional) => void;
   onEdit: (professional: Professional) => void;
-  onToggleActive: (professional: Professional) => void;
-  pendingId: string | null;
+  onDelete: (professional: Professional) => void;
 };
-
-export function StatusBadge({ active }: { active: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-        active
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-graphite-100 text-graphite-600",
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "size-1.5 rounded-full",
-          active ? "bg-emerald-500" : "bg-graphite-400",
-        )}
-      />
-      {active ? "Ativo" : "Inativo"}
-    </span>
-  );
-}
 
 /** Regiões em chips. Acima de `max`, o excedente vira "+N". */
 export function RegionChips({
@@ -82,18 +58,14 @@ export function RegionChips({
 function RowActions({
   professional,
   onEdit,
-  onToggleActive,
-  pending,
+  onDelete,
   variant,
 }: {
   professional: Professional;
   onEdit: (professional: Professional) => void;
-  onToggleActive: (professional: Professional) => void;
-  pending: boolean;
+  onDelete: (professional: Professional) => void;
   variant: "table" | "card";
 }) {
-  const toggleLabel = professional.is_active ? "Inativar" : "Ativar";
-  const ToggleIcon = professional.is_active ? PowerOff : Power;
   const whatsAppUrl = toWhatsAppUrl(professional.phone);
 
   if (variant === "card") {
@@ -118,16 +90,11 @@ function RowActions({
 
         <button
           type="button"
-          onClick={() => onToggleActive(professional)}
-          disabled={pending}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-graphite-700 transition-colors hover:bg-graphite-50 disabled:opacity-60"
+          onClick={() => onDelete(professional)}
+          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-graphite-200 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
         >
-          {pending ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden />
-          ) : (
-            <ToggleIcon className="size-3.5" aria-hidden />
-          )}
-          {toggleLabel}
+          <Trash2 className="size-3.5" aria-hidden />
+          Excluir
         </button>
       </div>
     );
@@ -155,17 +122,12 @@ function RowActions({
 
       <button
         type="button"
-        onClick={() => onToggleActive(professional)}
-        disabled={pending}
-        title={toggleLabel}
-        aria-label={`${toggleLabel} ${professional.name}`}
-        className="flex size-9 items-center justify-center rounded-lg text-graphite-500 transition-colors hover:bg-graphite-100 hover:text-graphite-900 disabled:opacity-60"
+        onClick={() => onDelete(professional)}
+        title="Excluir"
+        aria-label={`Excluir ${professional.name}`}
+        className="flex size-9 items-center justify-center rounded-lg text-graphite-400 transition-colors hover:bg-red-50 hover:text-red-600"
       >
-        {pending ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden />
-        ) : (
-          <ToggleIcon className="size-4" aria-hidden />
-        )}
+        <Trash2 className="size-4" aria-hidden />
       </button>
     </div>
   );
@@ -175,22 +137,15 @@ export function ProfessionalList({
   professionals,
   onOpenDetails,
   onEdit,
-  onToggleActive,
-  pendingId,
+  onDelete,
 }: ProfessionalListProps) {
-  const [, startTransition] = useTransition();
-
-  const handleToggle = (professional: Professional) => {
-    startTransition(() => onToggleActive(professional));
-  };
-
   return (
     <>
       {/*
         Desktop — tabela
 
-        `overflow-x-auto` e não `overflow-hidden`: com sete colunas a tabela
-        pede ~850px e o cartão tem 679px num monitor de 1024 com o menu aberto.
+        `overflow-x-auto` e não `overflow-hidden`: com seis colunas a tabela
+        pede ~800px e o cartão tem 679px num monitor de 1024 com o menu aberto.
         Sem isto quem rola de lado é a PÁGINA inteira, e as ações da linha ficam
         cortadas fora da tela. Rolando dentro do próprio cartão, o cabeçalho, os
         filtros e a paginação continuam no lugar.
@@ -207,7 +162,6 @@ export function ProfessionalList({
               <Th>Segmento</Th>
               <Th>Regiões</Th>
               <Th>Telefone</Th>
-              <Th>Status</Th>
               <Th align="right">
                 <span className="sr-only">Ações</span>
               </Th>
@@ -223,12 +177,7 @@ export function ProfessionalList({
                   <button
                     type="button"
                     onClick={() => onOpenDetails(professional)}
-                    className={cn(
-                      "rounded text-left font-medium transition-colors hover:text-gold-700 hover:underline",
-                      professional.is_active
-                        ? "text-graphite-900"
-                        : "text-graphite-500",
-                    )}
+                    className="rounded text-left font-medium text-graphite-900 transition-colors hover:text-gold-700 hover:underline"
                   >
                     {professional.name}
                   </button>
@@ -255,15 +204,11 @@ export function ProfessionalList({
                 <td className="px-4 py-3.5 text-graphite-600 tabular-nums">
                   {professional.phone ?? "—"}
                 </td>
-                <td className="px-4 py-3.5">
-                  <StatusBadge active={professional.is_active} />
-                </td>
                 <td className="px-2 py-2.5">
                   <RowActions
                     professional={professional}
                     onEdit={onEdit}
-                    onToggleActive={handleToggle}
-                    pending={pendingId === professional.id}
+                    onDelete={onDelete}
                     variant="table"
                   />
                 </td>
@@ -293,7 +238,6 @@ export function ProfessionalList({
                   {professional.segment?.name ?? "Sem segmento"}
                 </p>
               </div>
-              <StatusBadge active={professional.is_active} />
             </div>
 
             <dl className="mt-4 space-y-3 border-t border-graphite-100 pt-3.5 text-sm">
@@ -327,8 +271,7 @@ export function ProfessionalList({
               <RowActions
                 professional={professional}
                 onEdit={onEdit}
-                onToggleActive={handleToggle}
-                pending={pendingId === professional.id}
+                onDelete={onDelete}
                 variant="card"
               />
             </div>

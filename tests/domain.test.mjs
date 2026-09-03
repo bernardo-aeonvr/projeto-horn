@@ -28,10 +28,8 @@ import {
   mergeOptionNames,
   optionKey,
 } from "../src/lib/professionals/format.ts";
-import {
-  parsePage,
-  parseProfessionalStatus,
-} from "../src/lib/professionals/types.ts";
+import { parsePage } from "../src/lib/professionals/types.ts";
+import { contactCompany } from "../src/lib/contacts/types.ts";
 
 // ---------------------------------------------------------------------------
 // Harness mínimo, no mesmo formato de saída do authz.test.mjs
@@ -286,12 +284,46 @@ eq(
 // ---------------------------------------------------------------------------
 section("Profissionais — filtros vindos da URL");
 // ---------------------------------------------------------------------------
-eq("status inválido cai em todos", parseProfessionalStatus("qualquer"), "todos");
-eq("status ausente cai em todos", parseProfessionalStatus(undefined), "todos");
-eq("status válido é mantido", parseProfessionalStatus("ativos"), "ativos");
 eq("página inválida cai em 1", parsePage("abc"), 1);
 eq("página zero cai em 1", parsePage("0"), 1);
 eq("página válida é mantida", parsePage("3"), 3);
+
+// ---------------------------------------------------------------------------
+section("Contatos — a empresa que a listagem mostra");
+// ---------------------------------------------------------------------------
+/** Contato mínimo, com o snapshot e a empresa atual que o caso pede. */
+function contact(companyName, currentCompany) {
+  return {
+    company_name: companyName,
+    professional:
+      currentCompany === undefined
+        ? null
+        : {
+            id: "p1",
+            name: "Larissa",
+            segment_name: "Arquiteto",
+            company: currentCompany,
+          },
+  };
+}
+
+eq(
+  "o snapshot vence a empresa atual (histórico preservado)",
+  contactCompany(contact("Ziggy", "Studio Norte")),
+  "Ziggy",
+);
+eq(
+  "sem snapshot, cai para a empresa atual do profissional",
+  contactCompany(contact(null, "Studio Norte")),
+  "Studio Norte",
+);
+eq(
+  "snapshot só com espaços não conta como snapshot",
+  contactCompany(contact("   ", "Studio Norte")),
+  "Studio Norte",
+);
+eq("profissional sem empresa vira null", contactCompany(contact(null, null)), null);
+eq("contato sem profissional vira null", contactCompany(contact(null)), null);
 
 // ---------------------------------------------------------------------------
 console.log(`\n${"=".repeat(70)}`);

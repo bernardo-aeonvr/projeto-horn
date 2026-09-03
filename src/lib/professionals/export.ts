@@ -20,7 +20,7 @@ import type { Professional } from "./types";
  * A carteira em planilha.
  *
  * Uma aba, uma linha por profissional, os mesmos rótulos que a tela mostra —
- * "Arquiteto", "Ativo", "Agosto" — e nunca o valor interno. Quem abre o arquivo
+ * "Arquiteto", "Agosto" — e nunca o valor interno. Quem abre o arquivo
  * é a mesma pessoa que usa o sistema; ela não deveria precisar de um dicionário
  * para ler a própria base.
  *
@@ -46,7 +46,6 @@ export type ExportContext = {
 const COLUMNS: SheetColumn[] = [
   { header: "Nome", width: 32 },
   { header: "Segmento", width: 22 },
-  { header: "Status", width: 12 },
   { header: "Telefone", width: 18 },
   { header: "E-mail", width: 30 },
   { header: "Instagram", width: 20 },
@@ -67,7 +66,6 @@ function row(professional: Professional): SheetCell[] {
   return [
     text(professional.name),
     text(professional.segment?.name ?? ""),
-    text(professional.is_active ? "Ativo" : "Inativo"),
     text(professional.phone ?? ""),
     text(professional.email ?? ""),
     // Guardado e exibido como @usuario; a planilha repete isso, sem inventar URL.

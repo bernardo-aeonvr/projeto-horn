@@ -31,8 +31,7 @@ const CANDIDATE_LIMIT = 50;
 /**
  * Nome de reserva. Hoje é inalcançável: a FK de `opportunities` é
  * `on delete restrict`, então um profissional com projeto não pode ser
- * excluído, e o inativo continua legível. Existe para o card não quebrar caso
- * a leitura do nome falhe.
+ * excluído. Existe para o card não quebrar caso a leitura do nome falhe.
  */
 export const UNKNOWN_PROFESSIONAL = "Profissional não identificado";
 

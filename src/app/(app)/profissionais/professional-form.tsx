@@ -194,21 +194,6 @@ export function ProfessionalForm({
                   </option>
                 ))}
               </SelectField>
-
-              <SelectField
-                label="Status"
-                name="is_active"
-                defaultValue={submittedText(
-                  sent,
-                  "is_active",
-                  professional === null || professional.is_active
-                    ? "true"
-                    : "false",
-                )}
-              >
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
-              </SelectField>
             </div>
           </Section>
 

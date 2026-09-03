@@ -158,11 +158,6 @@ function describeFilters(
   if (filters.company) parts.push(`Empresa = ${filters.company}`);
   if (filters.jobRole) parts.push(`Cargo = ${filters.jobRole}`);
 
-  if (filters.status !== "todos") {
-    parts.push(`Status = ${filters.status === "ativos" ? "Ativos" : "Inativos"}`);
-    slugParts.push(filters.status);
-  }
-
   if (filters.q.trim()) parts.push(`Busca = ${filters.q.trim()}`);
 
   return { filters: parts, slug: slugParts.join("-") };

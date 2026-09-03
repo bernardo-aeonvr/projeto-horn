@@ -115,6 +115,27 @@ export function ContactForm({
     lockedProfessionalId ||
     null;
 
+  /*
+    Opções do seletor: a carteira viva mais, na edição, o profissional que ESTE
+    contato já aponta.
+
+    O segundo caso é o profissional excluído. Ele saiu da lista de propósito —
+    ninguém deve poder escolhê-lo para um contato novo —, mas o contato de
+    agosto continua sendo dele, e sem esta linha o seletor abriria em branco e
+    salvar sem tocar no campo trocaria o dono do registro. Trocar para outra
+    pessoa continua possível; o que não dá é escolhê-lo de novo depois de sair.
+  */
+  const professionalOptions = [...professionals];
+  const linked = contact?.professional;
+  if (linked && !professionalOptions.some((option) => option.id === linked.id)) {
+    professionalOptions.unshift({
+      id: linked.id,
+      name: linked.name,
+      segment_name: linked.segment_name,
+      company: linked.company,
+    });
+  }
+
   return (
     <form
       action={formAction}
@@ -152,10 +173,20 @@ export function ContactForm({
             name="professional_id"
             label="Profissional"
             required
-            options={professionals.map((professional) => ({
+            /*
+              A empresa entra na identificação, não no valor: o formulário
+              continua enviando o id do profissional. Existem três Larissas na
+              carteira, e "Larissa" sozinha não diz qual delas é — "Ziggy ·
+              Arquiteto" diz. Quem não tem empresa mostra só o segmento, como
+              antes, e a busca do seletor passa a achar pela empresa também.
+            */
+            options={professionalOptions.map((professional) => ({
               id: professional.id,
               name: professional.name,
-              description: professional.segment_name,
+              description:
+                [professional.company, professional.segment_name]
+                  .filter((value) => value?.trim())
+                  .join(" · ") || null,
             }))}
             defaultValue={professionalId}
             placeholder="Buscar profissional"

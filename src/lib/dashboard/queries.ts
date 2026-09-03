@@ -111,7 +111,6 @@ type ContactedRow = {
   professional_id: string;
   professional_name: string;
   segment_name: string | null;
-  is_active: boolean;
   last_contact_at: string;
   last_channel: ContactChannel;
   contacts: number | string;
@@ -129,7 +128,6 @@ function toContactedProfessionals(
     professional_id: row.professional_id,
     name: row.professional_name,
     segment_name: row.segment_name,
-    is_active: row.is_active,
     last_contact_at: row.last_contact_at,
     last_channel: row.last_channel,
     contacts: count(row.contacts),

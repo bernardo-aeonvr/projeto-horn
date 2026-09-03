@@ -342,7 +342,7 @@ function contactedTable(
     numeric: withStores ? [4, 5] : [4],
     rows: rows.map((row) => {
       const cells = [
-        text(row.is_active ? row.name : `${row.name} (inativo)`),
+        text(row.name),
         text(row.segment_name ?? "—"),
         day(row.last_contact_at),
         text(CHANNEL_LABELS[row.last_channel]),
@@ -400,7 +400,7 @@ export function buildAdminReport(
           "Profissionais por segmento",
           data.segments,
           "Nenhum profissional cadastrado ainda.",
-          "Composição da carteira ativa.",
+          "Composição da carteira.",
         ),
         distributionTable(
           "Profissionais por região",
@@ -479,10 +479,9 @@ export function buildAdminReport(
       ? []
       : [
           {
-            label: "Profissionais ativos",
-            cell: text(
-              `${integer(portfolio.professionals_active)} de ${integer(portfolio.professionals_total)} cadastrados`,
-            ),
+            // Profissional não tem mais status: o número é a carteira inteira.
+            label: "Profissionais",
+            cell: text(`${integer(portfolio.professionals_total)} cadastrados`),
           },
           {
             label: "Lojas ativas",

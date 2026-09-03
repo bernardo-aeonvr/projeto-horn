@@ -24,7 +24,6 @@ import {
 import type { Professional } from "@/lib/professionals/types";
 
 import { ProfessionalContactHistory } from "./professional-contact-history";
-import { StatusBadge } from "./professional-list";
 import { ProfessionalOpportunities } from "./professional-opportunities";
 import { WhatsAppButton } from "./whatsapp-button";
 
@@ -53,14 +52,13 @@ export function ProfessionalDetails({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim px-5 py-5 sm:px-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <StatusBadge active={professional.is_active} />
-          {professional.segment ? (
+        {professional.segment ? (
+          <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex rounded-md bg-gold-50 px-2 py-1 text-xs font-medium text-gold-800">
               {professional.segment.name}
             </span>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         {/*
           Empresa e cargo ficam logo abaixo dos rótulos, e não numa das seções:

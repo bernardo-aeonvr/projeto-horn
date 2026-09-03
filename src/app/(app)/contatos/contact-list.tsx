@@ -4,7 +4,11 @@ import { Pencil, Trash2 } from "lucide-react";
 
 import { ChannelBadge } from "@/components/contacts/channel-badge";
 import { formatContactedAt } from "@/lib/contacts/period";
-import type { Contact, ContactStore } from "@/lib/contacts/types";
+import {
+  contactCompany,
+  type Contact,
+  type ContactStore,
+} from "@/lib/contacts/types";
 import { cn } from "@/lib/utils";
 
 type ContactListProps = {
@@ -54,6 +58,27 @@ export function PresentedStores({
           +{hidden}
         </span>
       ) : null}
+    </span>
+  );
+}
+
+/**
+ * A empresa do profissional NO DIA do contato.
+ *
+ * Vem do snapshot gravado no registro; nos contatos anteriores à migration
+ * 0019, que não têm snapshot, cai para a empresa atual do profissional. Quem
+ * não tem nenhuma das duas mostra o mesmo traço do resto da tabela — nunca
+ * "undefined" nem célula em branco sem explicação. A regra inteira está em
+ * `contactCompany`.
+ */
+function CompanyCell({ contact }: { contact: Contact }) {
+  const company = contactCompany(contact);
+
+  if (!company) return <span className="text-graphite-400">—</span>;
+
+  return (
+    <span className="line-clamp-2" title={company}>
+      {company}
     </span>
   );
 }
@@ -131,7 +156,7 @@ export function ContactList({ contacts, onEdit, onDelete }: ContactListProps) {
               <Th>Data e hora</Th>
               <Th>Canal</Th>
               <Th>Lojas apresentadas</Th>
-              <Th>Observação</Th>
+              <Th>Empresa</Th>
               <Th align="right">
                 <span className="sr-only">Ações</span>
               </Th>
@@ -163,13 +188,7 @@ export function ContactList({ contacts, onEdit, onDelete }: ContactListProps) {
                   <PresentedStores stores={contact.stores} />
                 </td>
                 <td className="max-w-[16rem] px-4 py-3.5 text-graphite-600">
-                  {contact.notes ? (
-                    <span className="line-clamp-2" title={contact.notes}>
-                      {contact.notes}
-                    </span>
-                  ) : (
-                    <span className="text-graphite-400">—</span>
-                  )}
+                  <CompanyCell contact={contact} />
                 </td>
                 <td className="px-2 py-2.5">
                   <RowActions
@@ -211,14 +230,12 @@ export function ContactList({ contacts, onEdit, onDelete }: ContactListProps) {
                   <PresentedStores stores={contact.stores} max={4} />
                 </div>
               </div>
-              {contact.notes ? (
-                <div>
-                  <p className="text-xs text-graphite-500">Observação</p>
-                  <p className="mt-0.5 leading-relaxed text-graphite-700">
-                    {contact.notes}
-                  </p>
+              <div>
+                <p className="text-xs text-graphite-500">Empresa</p>
+                <div className="mt-0.5 leading-relaxed text-graphite-700">
+                  <CompanyCell contact={contact} />
                 </div>
-              ) : null}
+              </div>
             </div>
 
             <div className="mt-4">

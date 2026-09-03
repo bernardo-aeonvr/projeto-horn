@@ -53,6 +53,8 @@ export type ContactProfessional = {
   id: string;
   name: string;
   segment_name: string | null;
+  /** Empresa ATUAL do profissional. Fallback do snapshot; ver `contactCompany`. */
+  company: string | null;
 };
 
 export type Contact = {
@@ -61,6 +63,14 @@ export type Contact = {
   contacted_at: string;
   channel: ContactChannel;
   notes: string | null;
+  /**
+   * Empresa do profissional NO MOMENTO do contato — snapshot histórico
+   * gravado pelo trigger `contacts_snapshot_company` (migration 0019).
+   *
+   * Nula nos contatos anteriores à migration: ali não há como saber onde a
+   * pessoa trabalhava, e `contactCompany` cai para a empresa atual dela.
+   */
+  company_name: string | null;
   created_at: string;
   professional: ContactProfessional | null;
   /**
@@ -72,7 +82,24 @@ export type Contact = {
 
 /** Colunas de `contacts` + embed do profissional e do segmento dele. */
 export const CONTACT_COLUMNS =
-  "id, professional_id, contacted_at, channel, notes, created_at, professional:professionals!inner(id, name, segment:segments(name))";
+  "id, professional_id, contacted_at, channel, notes, company_name, created_at, professional:professionals!inner(id, name, company, segment:segments(name))";
+
+/**
+ * A empresa que a tela mostra para um contato.
+ *
+ * O snapshot manda: o contato de agosto continua dizendo "Ziggy" mesmo depois
+ * de a pessoa mudar de escritório, que é o que faz o histórico comercial valer
+ * alguma coisa. Sem snapshot — contatos anteriores à 0019 —, a empresa atual
+ * do profissional é a melhor informação existente. Sem nenhuma das duas, o
+ * traço que o resto da interface usa para "vazio".
+ */
+export function contactCompany(contact: Contact): string | null {
+  const snapshot = contact.company_name?.trim();
+  if (snapshot) return snapshot;
+
+  const current = contact.professional?.company?.trim();
+  return current ? current : null;
+}
 
 export const PERIOD_PRESETS = [
   "todos",

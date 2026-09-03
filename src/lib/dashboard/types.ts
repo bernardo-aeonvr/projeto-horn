@@ -16,13 +16,17 @@ import type { OpportunityStatusCounts } from "@/lib/opportunities/types";
 /** Estado atual da base. Independente do período selecionado. */
 export type PortfolioTotals = {
   professionals_total: number;
+  /**
+   * OBSOLETO desde a 0019: profissional não tem mais status, e a RPC devolve
+   * este campo igual ao total. Mantidos aqui só porque a função do banco
+   * continua retornando as duas colunas; a tela usa `professionals_total`.
+   */
   professionals_active: number;
-  /** Fora da carteira ativa. Não vai à tela: é `total - ativos`. */
   professionals_inactive: number;
-  /** Ativos sem nenhuma região cadastrada — o gráfico de regiões não os cobre. */
+  /** Sem nenhuma região cadastrada — o gráfico de regiões não os cobre. */
   professionals_without_region: number;
   /**
-   * Ativos que nunca receberam contato, em toda a história.
+   * Quem nunca recebeu contato, em toda a história.
    * A regra central do produto em forma de número: estar cadastrado não
    * significa ter sido contatado.
    */
@@ -129,8 +133,6 @@ export type ContactedProfessional = {
   professional_id: string;
   name: string;
   segment_name: string | null;
-  /** Situação atual na carteira. Não filtra a lista; só sinaliza na tela. */
-  is_active: boolean;
   /** Contato mais recente DENTRO do período. */
   last_contact_at: string;
   /** Canal daquele contato mais recente — nunca o do primeiro. */

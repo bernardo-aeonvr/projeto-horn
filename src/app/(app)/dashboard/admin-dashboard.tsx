@@ -244,11 +244,16 @@ export function AdminDashboard({
             description="Estado atual da base. Estes números descrevem o cadastro hoje e não mudam com o filtro de período."
           >
             <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-4">
+              {/*
+                A carteira inteira, sem recorte: Ativo/Inativo saiu do produto
+                na migration 0019, e `professionals_active` passou a ser igual
+                ao total em qualquer base.
+              */}
               <KpiCard
                 size="sm"
-                label="Profissionais ativos"
-                value={integer(portfolio.professionals_active)}
-                hint={`${integer(portfolio.professionals_total)} cadastrados no total`}
+                label="Profissionais"
+                value={integer(portfolio.professionals_total)}
+                hint="cadastrados na carteira"
               />
               <KpiCard
                 size="sm"
@@ -262,32 +267,32 @@ export function AdminDashboard({
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <Section
               title="Profissionais por segmento"
-              description="Composição da carteira ativa."
+              description="Composição da carteira."
             >
               <DistributionChart
                 items={data.segments.map((slice) => ({
                   label: slice.label,
                   value: slice.active_count,
                 }))}
-                shareOf="profissionais na carteira ativa"
+                shareOf="profissionais na carteira"
                 emptyMessage="Nenhum profissional cadastrado ainda."
               />
             </Section>
 
             <Section
               title="Profissionais por região"
-              description="Cobertura geográfica da carteira ativa."
+              description="Cobertura geográfica da carteira."
             >
               <DistributionChart
                 items={data.regions.map((slice) => ({
                   label: slice.label,
                   value: slice.active_count,
                 }))}
-                shareOf="atuações por região na carteira ativa"
+                shareOf="atuações por região na carteira"
                 emptyMessage="Nenhuma região atribuída ainda."
                 note={
                   portfolio.professionals_without_region > 0
-                    ? `Um profissional pode atuar em várias regiões, então a soma passa do total. ${integer(portfolio.professionals_without_region)} ativos ainda não têm região definida.`
+                    ? `Um profissional pode atuar em várias regiões, então a soma passa do total. ${integer(portfolio.professionals_without_region)} ainda não têm região definida.`
                     : "Um profissional pode atuar em várias regiões, então a soma passa do total da carteira."
                 }
               />

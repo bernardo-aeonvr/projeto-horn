@@ -57,7 +57,7 @@ type DistributionChartProps = {
   note?: string;
   /**
    * O que a soma das fatias representa, usado para explicar o denominador do
-   * percentual. Ex.: "profissionais na carteira ativa".
+   * percentual. Ex.: "profissionais na carteira".
    */
   shareOf: string;
   defaultView?: View;

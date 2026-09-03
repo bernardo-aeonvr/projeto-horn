@@ -17,7 +17,6 @@ export type ProfessionalPayload = {
   birthday_day: number | null;
   birthday_month: number | null;
   notes: string | null;
-  is_active: boolean;
 };
 
 type ValidationResult =
@@ -179,7 +178,6 @@ export function parseProfessionalForm(formData: FormData): ValidationResult {
       birthday_day: birthdayDay,
       birthday_month: birthdayMonth,
       notes: emptyToNull(notes),
-      is_active: formData.get("is_active") !== "false",
     },
   };
 }

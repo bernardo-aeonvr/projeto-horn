@@ -82,6 +82,24 @@ export function OpportunityForm({
     lockedProfessionalId ||
     null;
 
+  /*
+    A carteira viva mais, na edição, o profissional que ESTE projeto já aponta
+    — que pode ter sido excluído depois. Sem ele o seletor abriria em branco, e
+    salvar sem tocar no campo trocaria o dono do projeto. Mesma regra do
+    formulário de contato: aparece porque já está vinculado, não como opção
+    nova. A empresa não entra: aqui a linha de apoio é o segmento.
+  */
+  const professionalOptions = [...professionals];
+  const linked = opportunity?.professional;
+  if (linked && !professionalOptions.some((option) => option.id === linked.id)) {
+    professionalOptions.unshift({
+      id: linked.id,
+      name: linked.name,
+      segment_name: linked.segment_name,
+      company: null,
+    });
+  }
+
   const initialStoreId =
     submittedText(sent, "store_id") || opportunity?.store_id || null;
 
@@ -124,7 +142,7 @@ export function OpportunityForm({
             name="professional_id"
             label="Profissional"
             required
-            options={professionals.map((professional) => ({
+            options={professionalOptions.map((professional) => ({
               id: professional.id,
               name: professional.name,
               description: professional.segment_name,

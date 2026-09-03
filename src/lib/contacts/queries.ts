@@ -15,9 +15,15 @@ function escapeLikePattern(value: string) {
 }
 
 type EmbeddedSegment = { name: string } | { name: string }[] | null;
+type EmbeddedProfessionalRow = {
+  id: string;
+  name: string;
+  company: string | null;
+  segment: EmbeddedSegment;
+};
 type EmbeddedProfessional =
-  | { id: string; name: string; segment: EmbeddedSegment }
-  | { id: string; name: string; segment: EmbeddedSegment }[]
+  | EmbeddedProfessionalRow
+  | EmbeddedProfessionalRow[]
   | null;
 
 type ContactRow = Omit<Contact, "professional" | "stores"> & {
@@ -34,6 +40,7 @@ function readProfessional(value: EmbeddedProfessional) {
     id: row.id,
     name: row.name,
     segment_name: segment?.name ?? null,
+    company: row.company ?? null,
   };
 }
 
@@ -411,19 +418,33 @@ export type ProfessionalOption = {
   id: string;
   name: string;
   segment_name: string | null;
+  /**
+   * Empresa atual, para desfazer a ambiguidade no seletor: três Larissas
+   * viram "Larissa · Ziggy", "Larissa Souza · Studio Norte"...
+   *
+   * É identificação, não valor: o que o formulário envia continua sendo o id
+   * do profissional.
+   */
+  company: string | null;
 };
 
 type ProfessionalOptionRow = {
   id: string;
   name: string;
+  company: string | null;
   segment: { name: string } | { name: string }[] | null;
 };
 
 /**
- * Profissionais que podem receber contato.
+ * Profissionais que podem receber um vínculo NOVO — contato ou projeto.
  *
- * Traz os ativos e, na edição, garante que o profissional já registrado
- * apareça mesmo que tenha sido inativado depois.
+ * Só a carteira viva. Quem foi excluído não pode ser escolhido de novo, mesmo
+ * que o id dele continue existindo por causa do histórico (migration 0020).
+ *
+ * `includeId` é a exceção, e serve a um caso só: o registro que está sendo
+ * editado aponta para alguém já excluído, e o seletor precisa conseguir
+ * mostrar quem é. Ele acrescenta aquele profissional à lista — um, nominal,
+ * nunca "todos os excluídos".
  */
 export async function listProfessionalOptions(
   includeId?: string | null,
@@ -432,12 +453,12 @@ export async function listProfessionalOptions(
 
   let query = supabase
     .from("professionals")
-    .select("id, name, segment:segments(name)")
+    .select("id, name, company, segment:segments(name)")
     .order("name", { ascending: true });
 
   query = includeId
-    ? query.or(`is_active.eq.true,id.eq.${includeId}`)
-    : query.eq("is_active", true);
+    ? query.or(`deleted_at.is.null,id.eq.${includeId}`)
+    : query.is("deleted_at", null);
 
   const { data, error } = await query;
 
@@ -448,6 +469,11 @@ export async function listProfessionalOptions(
 
   return (data as unknown as ProfessionalOptionRow[]).map((row) => {
     const segment = Array.isArray(row.segment) ? row.segment[0] : row.segment;
-    return { id: row.id, name: row.name, segment_name: segment?.name ?? null };
+    return {
+      id: row.id,
+      name: row.name,
+      segment_name: segment?.name ?? null,
+      company: row.company ?? null,
+    };
   });
 }

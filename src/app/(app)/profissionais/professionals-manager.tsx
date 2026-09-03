@@ -5,12 +5,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { SlideOver } from "@/components/ui/slide-over";
 import { useToast } from "@/components/ui/toast";
 import type { OpportunityStore } from "@/lib/opportunities/types";
-import { setProfessionalActiveAction } from "@/lib/professionals/actions";
+import { deleteProfessionalAction } from "@/lib/professionals/actions";
 import { mergeOptionNames } from "@/lib/professionals/format";
 import {
   PAGE_SIZE,
@@ -86,7 +87,8 @@ export function ProfessionalsManager({
   const [createdOptions, setCreatedOptions] = useState<
     { kind: ProfessionalOptionKind; name: string }[]
   >([]);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<Professional | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const closePanel = useCallback(() => setPanel(null), []);
@@ -118,21 +120,17 @@ export function ProfessionalsManager({
     [showToast],
   );
 
-  const handleToggleActive = useCallback(
-    (professional: Professional) => {
-      setTogglingId(professional.id);
+  const confirmDelete = useCallback(() => {
+    if (!toDelete) return;
+    setDeleting(true);
 
-      startTransition(async () => {
-        const result = await setProfessionalActiveAction(
-          professional.id,
-          !professional.is_active,
-        );
-        setTogglingId(null);
-        showToast(result.ok ? "success" : "error", result.message);
-      });
-    },
-    [showToast],
-  );
+    startTransition(async () => {
+      const result = await deleteProfessionalAction(toDelete.id);
+      setDeleting(false);
+      setToDelete(null);
+      showToast(result.ok ? "success" : "error", result.message);
+    });
+  }, [toDelete, showToast]);
 
   const clearFilters = useCallback(() => {
     router.replace(pathname, { scroll: false });
@@ -210,8 +208,7 @@ export function ProfessionalsManager({
               setPanel({ mode: "details", professional })
             }
             onEdit={(professional) => setPanel({ mode: "edit", professional })}
-            onToggleActive={handleToggleActive}
-            pendingId={togglingId}
+            onDelete={setToDelete}
           />
 
           <Pagination
@@ -254,6 +251,7 @@ export function ProfessionalsManager({
                 id: panel.professional.id,
                 name: panel.professional.name,
                 segment_name: panel.professional.segment?.name ?? null,
+                company: panel.professional.company,
               },
             ]}
             lockedProfessionalId={panel.professional.id}
@@ -277,6 +275,7 @@ export function ProfessionalsManager({
                 id: panel.professional.id,
                 name: panel.professional.name,
                 segment_name: panel.professional.segment?.name ?? null,
+                company: panel.professional.company,
               },
             ]}
             lockedProfessionalId={panel.professional.id}
@@ -304,6 +303,26 @@ export function ProfessionalsManager({
           />
         ) : null}
       </SlideOver>
+
+      {/*
+        A confirmação não menciona o que acontece por baixo, e não deve: para
+        quem usa, excluir é excluir. O que ela precisa dizer é o efeito —
+        ele sai do cadastro, não pode mais ser escolhido, e o que já foi
+        registrado com ele continua lá.
+      */}
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="Excluir profissional?"
+        description={
+          toDelete
+            ? `${toDelete.name} deixará de aparecer no cadastro e não poderá ser selecionado em novos registros. O histórico de contatos e projetos existentes será preservado.`
+            : ""
+        }
+        confirmLabel="Excluir"
+        pending={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setToDelete(null)}
+      />
     </>
   );
 }

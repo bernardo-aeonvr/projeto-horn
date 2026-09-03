@@ -223,9 +223,6 @@ function ProfessionalName({
           {row.name}
         </span>
       )}
-      {row.is_active ? null : (
-        <span className="shrink-0 text-xs text-graphite-400">inativo</span>
-      )}
     </span>
   );
 }

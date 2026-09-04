@@ -9,7 +9,7 @@ import {
   type SheetColumn,
 } from "@/lib/xlsx/sheet";
 
-import { CHANNEL_LABELS, type Contact } from "./types";
+import { CHANNEL_LABELS, contactCompany, type Contact } from "./types";
 
 /**
  * O histórico de alcance em planilha.
@@ -43,16 +43,17 @@ export type ContactExportContext = {
   storeName: string | null;
 };
 
-const COLUMNS: SheetColumn[] = [
+export const contactColumns: SheetColumn[] = [
   { header: "Data do contato", width: 18 },
   { header: "Profissional", width: 30 },
+  { header: "Empresa", width: 30 },
   { header: "Segmento", width: 20 },
   { header: "Canal", width: 14 },
   { header: "Lojas apresentadas", width: 38, wrap: true },
   { header: "Observação", width: 38, wrap: true },
 ];
 
-function row(contact: Contact): SheetCell[] {
+export function contactRow(contact: Contact): SheetCell[] {
   return [
     /*
       Data e hora na mesma célula, como a tela mostra ("13/08/2026, 15:42") e
@@ -62,6 +63,17 @@ function row(contact: Contact): SheetCell[] {
     */
     dateTime(contact.contacted_at),
     text(contact.professional?.name ?? ""),
+    /*
+      A MESMA empresa que a listagem mostra, pela mesma função: o snapshot
+      gravado no dia do contato, e só na falta dele a empresa atual da pessoa.
+      Ler `professional.company` direto aqui faria a planilha reescrever a
+      história — um contato de agosto passaria a dizer o escritório para onde o
+      profissional foi em outubro, e discordaria da tela ao lado.
+
+      É a empresa DO PROFISSIONAL, não a loja apresentada: a loja tem coluna
+      própria, mais adiante.
+    */
+    text(contactCompany(contact) ?? ""),
     text(contact.professional?.segment_name ?? ""),
     // O rótulo canônico do canal, o mesmo do formulário e do badge da lista.
     text(CHANNEL_LABELS[contact.channel]),
@@ -111,8 +123,8 @@ export async function renderContactsWorkbook(
 
   addSheet(workbook, {
     name: "Contatos",
-    columns: COLUMNS,
-    rows: contacts.map(row),
+    columns: contactColumns,
+    rows: contacts.map(contactRow),
   });
 
   return workbookBytes(workbook);

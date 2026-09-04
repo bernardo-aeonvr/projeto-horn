@@ -122,14 +122,23 @@ function drawHeader(doc: jsPDF, report: DashboardReport, cursor: Cursor): void {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.setTextColor(GRAPHITE_900);
-  doc.text("HORN", MARGIN.left + 24, barTop + 20);
+  const wordmarkX = MARGIN.left + 24;
+  doc.text("HORN", wordmarkX, barTop + 20);
+  /*
+    A largura é medida AQUI, com a fonte da marca ainda ativa.
+    `getTextWidth` responde sobre o estado corrente do documento: medida depois
+    do `setFont("normal")`/`setFontSize(9)` abaixo, ela devolvia a largura de
+    "HORN" em 9pt — menos da metade do que a palavra ocupa em 18pt negrito — e
+    a assinatura era desenhada por cima do logotipo.
+  */
+  const wordmarkWidth = doc.getTextWidth("HORN");
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(GRAPHITE_400);
   doc.text(
     "Representação comercial",
-    MARGIN.left + 24 + doc.getTextWidth("HORN") + 8,
+    wordmarkX + wordmarkWidth + 8,
     barTop + 20,
   );
 

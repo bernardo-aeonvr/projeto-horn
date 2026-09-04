@@ -30,6 +30,11 @@ import {
 } from "../src/lib/professionals/format.ts";
 import { parsePage } from "../src/lib/professionals/types.ts";
 import { contactCompany } from "../src/lib/contacts/types.ts";
+import {
+  professionalColumns,
+  professionalRow,
+} from "../src/lib/professionals/export.ts";
+import { contactColumns, contactRow } from "../src/lib/contacts/export.ts";
 
 // ---------------------------------------------------------------------------
 // Harness mínimo, no mesmo formato de saída do authz.test.mjs
@@ -324,6 +329,209 @@ eq(
 );
 eq("profissional sem empresa vira null", contactCompany(contact(null, null)), null);
 eq("contato sem profissional vira null", contactCompany(contact(null)), null);
+
+// ---------------------------------------------------------------------------
+section("Profissionais — a linha que vai para o Excel");
+// ---------------------------------------------------------------------------
+/*
+  O bug que originou esta bateria: a planilha saía sem Empresa e sem Cargo, dois
+  campos que a tela mostra desde a migration 0015. O teste é do MAPEAMENTO —
+  quem escreve o arquivo é o ExcelJS, e não era ele que estava errado.
+*/
+
+/** Profissional mínimo, com os campos que o caso em teste precisa. */
+function professional(fields = {}) {
+  return {
+    id: "p1",
+    name: "Alexandre Duarte Motta",
+    segment_id: "s1",
+    company: null,
+    job_role: null,
+    email: null,
+    instagram: null,
+    phone: null,
+    address: null,
+    postal_code: null,
+    city: null,
+    state: null,
+    birthday_day: null,
+    birthday_month: null,
+    notes: null,
+    created_at: "2026-08-13T14:00:00Z",
+    updated_at: "2026-08-13T14:00:00Z",
+    segment: { id: "s1", slug: "arquiteto", name: "Arquiteto" },
+    regions: [],
+    ...fields,
+  };
+}
+
+/** Valor de uma coluna pelo rótulo do cabeçalho — o teste não conta posições. */
+function cellByHeader(columns, cells, header) {
+  const index = columns.findIndex((column) => column.header === header);
+  if (index === -1) return `SEM A COLUNA "${header}"`;
+  return cells[index]?.text;
+}
+
+const PROFESSIONAL_HEADERS = professionalColumns.map((column) => column.header);
+
+eq(
+  "cabeçalho traz Empresa e Cargo logo depois do nome",
+  PROFESSIONAL_HEADERS.slice(0, 4),
+  ["Nome", "Empresa", "Cargo", "Segmento"],
+);
+eq(
+  "uma célula por coluna",
+  professionalRow(professional()).length,
+  professionalColumns.length,
+);
+ok(
+  "nenhuma coluna de status voltou",
+  !PROFESSIONAL_HEADERS.some((header) => /ativ|inativ|status/i.test(header)),
+  PROFESSIONAL_HEADERS.join(", "),
+);
+
+{
+  const cells = professionalRow(
+    professional({ company: "Jubileu Arquitetos", job_role: "Dono" }),
+  );
+  eq("empresa vai como está na tela", cellByHeader(professionalColumns, cells, "Empresa"), "Jubileu Arquitetos");
+  eq("cargo vai como está na tela", cellByHeader(professionalColumns, cells, "Cargo"), "Dono");
+}
+{
+  // Cargo é texto livre: nada de "Sócio"/"Equipe" fixos no código da planilha.
+  const cells = professionalRow(professional({ job_role: "Diretor Comercial" }));
+  eq("cargo fora dos padrões sai inteiro", cellByHeader(professionalColumns, cells, "Cargo"), "Diretor Comercial");
+}
+{
+  const cells = professionalRow(professional());
+  eq("sem empresa vira célula vazia", cellByHeader(professionalColumns, cells, "Empresa"), "");
+  eq("sem cargo vira célula vazia", cellByHeader(professionalColumns, cells, "Cargo"), "");
+}
+{
+  const cells = professionalRow(
+    professional({ segment: { id: "s2", slug: "cliente-final", name: "Cliente Final" } }),
+  );
+  eq("Cliente Final é um segmento como outro", cellByHeader(professionalColumns, cells, "Segmento"), "Cliente Final");
+}
+{
+  const cells = professionalRow(professional({ segment: null }));
+  eq("profissional sem segmento não quebra a linha", cellByHeader(professionalColumns, cells, "Segmento"), "");
+}
+{
+  const cells = professionalRow(
+    professional({
+      company: "Aliás Arquitetura",
+      job_role: "Sócio",
+      phone: "(41) 3456-7890",
+      postal_code: "01310-000",
+      instagram: "instagram.com/alias",
+      city: "São Bernardo do Campo",
+      regions: [
+        { id: "r1", slug: "curitiba", name: "Curitiba", sort_order: 1 },
+        { id: "r2", slug: "litoral", name: "Litoral", sort_order: 2 },
+      ],
+    }),
+  );
+  eq("telefone continua texto (o Excel não o transforma em número)", cellByHeader(professionalColumns, cells, "Telefone"), "(41) 3456-7890");
+  eq("CEP mantém o zero à esquerda", cellByHeader(professionalColumns, cells, "CEP"), "01310-000");
+  eq("instagram vira @handle", cellByHeader(professionalColumns, cells, "Instagram"), "@alias");
+  eq("regiões em uma célula só", cellByHeader(professionalColumns, cells, "Regiões"), "Curitiba; Litoral");
+  eq("acento chega intacto", cellByHeader(professionalColumns, cells, "Cidade"), "São Bernardo do Campo");
+}
+{
+  const cells = professionalRow(
+    professional({ company: "Jubileu Arquitetos", job_role: "Dono", notes: "ok" }),
+  );
+  const sujo = cells.filter((cell) => /undefined|\[object Object\]|^null$/.test(cell.text));
+  eq("nenhuma célula com undefined, null ou [object Object]", sujo, []);
+}
+
+// ---------------------------------------------------------------------------
+section("Contatos — a linha que vai para o Excel");
+// ---------------------------------------------------------------------------
+
+/** Contato mínimo, no formato que a listagem entrega à exportação. */
+function exportContact(fields = {}) {
+  return {
+    id: "c1",
+    professional_id: "p1",
+    contacted_at: "2026-08-13T18:42:00Z",
+    channel: "whatsapp",
+    notes: null,
+    company_name: null,
+    created_at: "2026-08-13T18:42:00Z",
+    professional: {
+      id: "p1",
+      name: "Larissa",
+      segment_name: "Arquiteto",
+      company: null,
+    },
+    stores: [],
+    ...fields,
+  };
+}
+
+ok(
+  "a planilha de contatos tem a coluna Empresa",
+  contactColumns.some((column) => column.header === "Empresa"),
+  contactColumns.map((column) => column.header).join(", "),
+);
+eq(
+  "uma célula por coluna",
+  contactRow(exportContact()).length,
+  contactColumns.length,
+);
+eq(
+  "Empresa e Lojas apresentadas são colunas diferentes",
+  contactColumns.filter((column) => /Empresa|Lojas apresentadas/.test(column.header)).length,
+  2,
+);
+{
+  const cells = contactRow(
+    exportContact({
+      company_name: "Ziggy",
+      professional: { id: "p1", name: "Larissa", segment_name: "Arquiteto", company: "Studio Norte" },
+    }),
+  );
+  eq("o snapshot histórico vence a empresa atual", cellByHeader(contactColumns, cells, "Empresa"), "Ziggy");
+}
+{
+  const cells = contactRow(
+    exportContact({
+      professional: { id: "p1", name: "Larissa", segment_name: "Arquiteto", company: "Studio Norte" },
+    }),
+  );
+  eq("sem snapshot, a empresa atual do profissional", cellByHeader(contactColumns, cells, "Empresa"), "Studio Norte");
+}
+{
+  const cells = contactRow(exportContact());
+  eq("sem empresa nenhuma, célula vazia", cellByHeader(contactColumns, cells, "Empresa"), "");
+}
+{
+  // Profissional excluído: o embed pode não resolver, e o histórico continua.
+  const cells = contactRow(
+    exportContact({ company_name: "Empresa do dia do contato", professional: null }),
+  );
+  eq("profissional excluído não apaga a empresa histórica", cellByHeader(contactColumns, cells, "Empresa"), "Empresa do dia do contato");
+  eq("nome ausente vira célula vazia, não undefined", cellByHeader(contactColumns, cells, "Profissional"), "");
+}
+{
+  const cells = contactRow(
+    exportContact({
+      channel: "event",
+      stores: [
+        { id: "s1", name: "Loja A", is_active: true },
+        { id: "s2", name: "Marmoraria Açaí", is_active: false },
+      ],
+    }),
+  );
+  eq("Evento é um canal como outro", cellByHeader(contactColumns, cells, "Canal"), "Evento");
+  eq("todas as lojas apresentadas em uma célula", cellByHeader(contactColumns, cells, "Lojas apresentadas"), "Loja A; Marmoraria Açaí");
+}
+{
+  const cells = contactRow(exportContact({ notes: "Observação histórica." }));
+  eq("a observação histórica continua sendo exportada", cellByHeader(contactColumns, cells, "Observação"), "Observação histórica.");
+}
 
 // ---------------------------------------------------------------------------
 console.log(`\n${"=".repeat(70)}`);

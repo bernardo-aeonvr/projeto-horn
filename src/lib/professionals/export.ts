@@ -43,8 +43,17 @@ export type ExportContext = {
   slug: string;
 };
 
-const COLUMNS: SheetColumn[] = [
+export const professionalColumns: SheetColumn[] = [
   { header: "Nome", width: 32 },
+  /*
+    Empresa e cargo logo depois do nome, e não no fim da planilha, porque é
+    assim que a carteira é lida: "Alexandre, da Jubileu, dono". A tela mostra os
+    dois na mesma coluna ("Empresa e cargo"); aqui eles são duas, porque em
+    planilha a coluna é o filtro — juntá-los tiraria a chance de filtrar por
+    empresa sem escolher o cargo junto.
+  */
+  { header: "Empresa", width: 30 },
+  { header: "Cargo", width: 22 },
   { header: "Segmento", width: 22 },
   { header: "Telefone", width: 18 },
   { header: "E-mail", width: 30 },
@@ -60,11 +69,19 @@ const COLUMNS: SheetColumn[] = [
   { header: "Cadastrado em", width: 16 },
 ];
 
-function row(professional: Professional): SheetCell[] {
+export function professionalRow(professional: Professional): SheetCell[] {
   const handle = toInstagramHandle(professional.instagram);
 
   return [
     text(professional.name),
+    /*
+      Empresa e cargo saem como estão gravados na linha do profissional — são
+      texto, escolhido de uma lista reutilizável mas guardado no registro, e não
+      referência a resolver. Quem não tem sai com a célula vazia: um autônomo
+      não é um erro de cadastro, e "—" ali só atrapalharia quem for filtrar.
+    */
+    text(professional.company ?? ""),
+    text(professional.job_role ?? ""),
     text(professional.segment?.name ?? ""),
     text(professional.phone ?? ""),
     text(professional.email ?? ""),
@@ -135,8 +152,8 @@ export async function renderProfessionalsWorkbook(
 
   addSheet(workbook, {
     name: "Profissionais",
-    columns: COLUMNS,
-    rows: professionals.map(row),
+    columns: professionalColumns,
+    rows: professionals.map(professionalRow),
   });
 
   return workbookBytes(workbook);

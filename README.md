@@ -201,29 +201,109 @@ atenção redobrada, porque a RLS não se aplica dentro dela — o filtro por
 
 ## Keep-alive do banco
 
-O plano gratuito do Supabase pausa projetos sem atividade por alguns dias, e
-despausar é manual, pelo painel. Um recesso do escritório derrubaria o sistema
-sem ninguém ter feito nada errado.
+O plano gratuito do Supabase pausa projetos com pouca atividade numa janela de
+7 dias, e despausar é manual, pelo painel. A documentação não dá um número; diz
+que "alguns" acessos reais ao banco por dia normalmente bastam. Um recesso do
+escritório derrubaria o sistema sem ninguém ter feito nada errado.
 
-O `vercel.json` agenda uma chamada diária a `/api/keep-alive`, que faz uma
-consulta trivial no banco — o que conta como atividade é a requisição chegar ao
-projeto. A rota usa `SUPABASE_SECRET_KEY`, porque o papel anônimo não tem
-privilégio nenhum desde a migration `0008`; sem a chave ela responde **503** em
-vez de fingir sucesso, e a falha aparece em *Vercel → Project → Cron Jobs*.
+### Como funciona
 
-Vale conferir depois do deploy:
+O `vercel.json` agenda uma chamada diária a `/api/keep-alive`
+(`0 9 * * *`: entre 09:00 e 09:59 UTC, ou seja, 06:00–06:59 em São Paulo — no
+plano Hobby a Vercel escolhe o minuto dentro da hora). Cada execução faz
+**quatro requisições reais** ao PostgREST, em sequência:
 
-- o cron aparece em *Settings → Cron Jobs* (só roda em Production);
-- no plano Hobby a Vercel executa **uma vez por dia**, em horário aproximado —
-  o `0 9 * * *` do `vercel.json` é 06:00 em São Paulo;
-- `CRON_SECRET` cadastrada: a Vercel passa a mandar `Authorization: Bearer …`
-  sozinha, e a rota recusa quem chegar sem o segredo.
+1. `rpc/keepalive_ping` — UPDATE em `system_keepalive` (migration `0021`):
+   `last_ping_at = now()` e `ping_count + 1`;
+2. relê essa linha e confere que a escrita está lá;
+3. lê um id de `segments`;
+4. lê um id de `regions`, com contagem.
 
-Para testar à mão:
+Nenhuma tabela de negócio é escrita, nenhuma lista inteira é carregada. Cada
+operação tem timeout de 5 s e até 3 tentativas (espera de 0,5 s e 1,5 s) quando
+a falha é passageira — rede, timeout, 429 ou 5xx. Chave recusada ou tabela
+ausente falham na hora. Se qualquer operação não fechar, a rota responde **502**
+e não `ok: true`. O código está em `src/lib/keep-alive/heartbeat.ts`; os testes,
+em `tests/domain.test.mjs` (seção *Keep-alive*).
+
+`system_keepalive` tem uma linha só (`id = 1`), RLS ligada sem policy e nenhum
+grant para `anon`/`authenticated`: só a `SUPABASE_SECRET_KEY` lê ou escreve.
+
+### Variáveis na Vercel
+
+| Variável | Para quê | Sem ela |
+| --- | --- | --- |
+| `SUPABASE_SECRET_KEY` | o keep-alive fala com o banco como `service_role` | a rota responde **503** e não faz operação nenhuma |
+| `CRON_SECRET` | a Vercel manda `Authorization: Bearer <valor>` em toda chamada agendada; a rota recusa (**401**) quem chegar sem | a rota aceita qualquer chamada (e avisa no log de produção) |
+
+As duas em **Production**. Alterar variável exige um novo deploy para valer.
+
+### Respostas da rota
+
+| Status | Quando |
+| --- | --- |
+| 200 `{ ok: true, checkedAt, lastPingAt, pingCount, databaseOperations: 4, elapsedMs }` | as quatro operações voltaram do banco |
+| 401 `{ ok: false }` | `CRON_SECRET` configurada e `Authorization` ausente ou errado |
+| 502 `{ ok: false, failedOperation, attempts, databaseOperations }` | alguma operação falhou depois das tentativas |
+| 503 `{ ok: false, error }` | `SUPABASE_SECRET_KEY` ou a URL do projeto ausentes |
+
+Toda resposta sai com `Cache-Control: no-store`, e a rota é `force-dynamic`.
+
+### Testar à mão
 
 ```bash
-curl -i https://<dominio>/api/keep-alive -H "Authorization: Bearer $CRON_SECRET"
+curl -i https://plataforma-horn.vercel.app/api/keep-alive -H "Authorization: Bearer $CRON_SECRET"
 ```
+
+Espere `200` e `"databaseOperations":4`. Chamadas à mão gravam
+`source = 'manual'`; as do cron, `source = 'vercel-cron'`. Sem o header, a
+mesma chamada tem de voltar `401`.
+
+### Conferir que o cron está rodando
+
+- *Vercel → Project → Settings → Cron Jobs*: o job `/api/keep-alive` precisa
+  estar listado e **habilitado** (só existe para o deploy de Production);
+- **View Logs** no job abre os logs de runtime filtrados por
+  `requestPath:/api/keep-alive`. Uma execução boa mostra, em ordem:
+  `[keep-alive] starting (source=vercel-cron)`, `heartbeat update ok`,
+  `database check 1/2/3 ok` e `success - 4 database operations - …ms`.
+
+### Conferir que o banco recebeu a atividade
+
+No SQL Editor do Supabase:
+
+```sql
+select last_ping_at, ping_count, source,
+       now() - last_ping_at as ha_quanto_tempo
+  from public.system_keepalive;
+```
+
+`last_ping_at` deve ser de hoje (depois das 09:00 UTC) ou de ontem, e
+`ping_count` deve crescer um por dia. Uma diferença de mais de ~26 h significa
+que o cron de hoje não chegou ao banco.
+
+### Troubleshooting
+
+- **`last_ping_at` parado e nenhum log na Vercel** — o cron não disparou. Veja
+  se o job está habilitado em *Cron Jobs* e se o último deploy de Production
+  terminou. A Vercel não repete execução que falhou e avisa que a entrega é
+  "best effort"; um dia perdido não pausa o projeto, uma semana perdida sim.
+- **Log `chamada recusada: Authorization ausente ou inválido`** — a
+  `CRON_SECRET` mudou e o deploy é anterior à mudança. Faça um redeploy.
+- **502 com `failedOperation: "heartbeat"` e dica sobre a migration** — a
+  `0021_system_keepalive.sql` não foi aplicada neste projeto Supabase.
+- **502 com dica `chave recusada`** — a `SUPABASE_SECRET_KEY` da Vercel não é
+  a deste projeto, ou foi revogada.
+- **502 com dica `banco indisponível … ou projeto pausado`** — o projeto já
+  está pausado: o keep-alive não despausa. Restaure pelo painel do Supabase;
+  o cron do dia seguinte volta a registrar.
+- **503** — `SUPABASE_SECRET_KEY` não cadastrada no ambiente Production.
+- **Tudo verde e o projeto foi pausado mesmo assim** — o Supabase não publica o
+  critério exato e fala em atividade "de usuário". Se acontecer com
+  `ping_count` subindo todo dia, o próximo passo é acrescentar uma segunda
+  entrada diária no `vercel.json` (ex.: `0 21 * * *`; o Hobby aceita várias
+  entradas, cada uma uma vez por dia) ou passar o projeto para um plano pago,
+  que não pausa.
 
 ## Scripts
 
@@ -233,6 +313,7 @@ curl -i https://<dominio>/api/keep-alive -H "Authorization: Bearer $CRON_SECRET"
 | `npm run build` | Build de produção |
 | `npm run start` | Sobe o build de produção |
 | `npm run lint` | ESLint |
+| `npm run test:domain` | Testes de lógica pura, sem banco |
 
 ## Estado atual
 

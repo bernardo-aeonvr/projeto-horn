@@ -14,7 +14,7 @@ export const RESET_PASSWORD_ROUTE = "/redefinir-senha";
  *
  * `/api/keep-alive` é chamada pelo cron da Vercel, que não carrega cookie
  * nenhum. Quem protege essa rota é o `CRON_SECRET` conferido nela mesma, e
- * tudo o que ela faz é contar linhas de um catálogo.
+ * tudo o que ela faz é gravar o heartbeat técnico e ler dois catálogos.
  */
 const PUBLIC_ROUTES = [
   "/login",

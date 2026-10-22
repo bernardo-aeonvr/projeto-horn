@@ -35,6 +35,14 @@ import {
   professionalRow,
 } from "../src/lib/professionals/export.ts";
 import { contactColumns, contactRow } from "../src/lib/contacts/export.ts";
+import {
+  confirmsHeartbeat,
+  failureHint,
+  isAuthorizedCronRequest,
+  KeepAliveError,
+  runKeepAlive,
+  withRetry,
+} from "../src/lib/keep-alive/heartbeat.ts";
 
 // ---------------------------------------------------------------------------
 // Harness mínimo, no mesmo formato de saída do authz.test.mjs
@@ -531,6 +539,186 @@ eq(
 {
   const cells = contactRow(exportContact({ notes: "Observação histórica." }));
   eq("a observação histórica continua sendo exportada", cellByHeader(contactColumns, cells, "Observação"), "Observação histórica.");
+}
+
+// ---------------------------------------------------------------------------
+section("Keep-alive — segredo do cron");
+// ---------------------------------------------------------------------------
+eq("Bearer com o segredo certo passa", isAuthorizedCronRequest("Bearer s3gredo-do-cron", "s3gredo-do-cron"), true);
+eq("sem Authorization é recusado", isAuthorizedCronRequest(null, "s3gredo-do-cron"), false);
+eq("segredo errado, mesmo tamanho, é recusado", isAuthorizedCronRequest("Bearer s3gredo-do-crom", "s3gredo-do-cron"), false);
+eq("segredo sem o prefixo Bearer é recusado", isAuthorizedCronRequest("s3gredo-do-cron", "s3gredo-do-cron"), false);
+eq("tamanho diferente é recusado sem lançar", isAuthorizedCronRequest("Bearer x", "s3gredo-do-cron"), false);
+
+// ---------------------------------------------------------------------------
+section("Keep-alive — retry e timeout");
+// ---------------------------------------------------------------------------
+const noWait = { sleep: async () => {} };
+const okResponse = (data) => ({ data, error: null, status: 200 });
+const failResponse = (status, code) => ({ data: null, error: { message: "falha", code }, status });
+
+/** Devolve as respostas na ordem, uma por tentativa. */
+function scripted(...responses) {
+  let calls = 0;
+  const run = async () => responses[Math.min(calls++, responses.length - 1)];
+  return { run, calls: () => calls };
+}
+
+async function caught(promise) {
+  try {
+    await promise;
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
+{
+  const op = scripted(okResponse("linha"));
+  const result = await withRetry("op", op.run, noWait);
+  eq("sucesso na primeira tentativa não repete", [result.data, result.attempts, op.calls()], ["linha", 1, 1]);
+}
+{
+  const op = scripted(failResponse(503), okResponse("linha"));
+  const result = await withRetry("op", op.run, noWait);
+  eq("503 passageiro é repetido e recupera", [result.data, result.attempts], ["linha", 2]);
+}
+{
+  const op = scripted(failResponse(401));
+  const error = await caught(withRetry("op", op.run, noWait));
+  ok("chave recusada (401) falha", error instanceof KeepAliveError);
+  eq("401 não é repetido", op.calls(), 1);
+}
+{
+  const op = scripted(failResponse(503));
+  const error = await caught(withRetry("op", op.run, noWait));
+  eq("503 permanente para em 3 tentativas", [error?.attempts, op.calls(), error?.status], [3, 3, 503]);
+}
+{
+  const error = await caught(
+    withRetry("op", () => new Promise(() => {}), { ...noWait, attempts: 1, timeoutMs: 20 }),
+  );
+  eq("requisição pendurada vira timeout com status 0", [error?.status, /timeout/.test(error?.message ?? "")], [0, true]);
+}
+{
+  let aborted = false;
+  await caught(
+    withRetry(
+      "op",
+      (signal) => {
+        signal.addEventListener("abort", () => (aborted = true));
+        return new Promise(() => {});
+      },
+      { ...noWait, attempts: 1, timeoutMs: 20 },
+    ),
+  );
+  ok("o timeout aborta a requisição em curso", aborted);
+}
+{
+  let calls = 0;
+  const result = await withRetry(
+    "op",
+    async () => {
+      if (calls++ === 0) throw new TypeError("fetch failed");
+      return okResponse("linha");
+    },
+    noWait,
+  );
+  eq("exceção de rede é tratada como passageira", result.attempts, 2);
+}
+ok("função ausente aponta para a migration 0021", failureHint(404, "PGRST202").includes("0021"));
+
+// ---------------------------------------------------------------------------
+section("Keep-alive — execução completa");
+// ---------------------------------------------------------------------------
+/**
+ * Supabase de mentira com o encadeamento que `runKeepAlive` usa. `failures`
+ * diz, por operação, quantas vezes ela falha antes de responder.
+ */
+function fakeSupabase(failures = {}) {
+  const calls = [];
+  let row = { id: 1, last_ping_at: "2026-10-22T09:00:00.000Z", ping_count: 41, source: null };
+
+  function query(operation, produce) {
+    const builder = {
+      select: () => builder,
+      eq: () => builder,
+      limit: () => builder,
+      maybeSingle: () => builder,
+      abortSignal: () => builder,
+      then(resolve, reject) {
+        calls.push(operation);
+        const failure = failures[operation];
+        const response =
+          failure && failure.times-- > 0
+            ? failResponse(failure.status, failure.code)
+            : okResponse(produce());
+        return Promise.resolve(response).then(resolve, reject);
+      },
+    };
+    return builder;
+  }
+
+  const client = {
+    rpc: (_name, args) =>
+      query("rpc", () => {
+        row = {
+          ...row,
+          last_ping_at: new Date().toISOString(),
+          ping_count: row.ping_count + 1,
+          source: args.p_source,
+        };
+        return row;
+      }),
+    from: (table) => query(table, () => (table === "system_keepalive" ? row : [{ id: "x" }])),
+  };
+
+  return { client, calls, row: () => row };
+}
+
+{
+  const db = fakeSupabase();
+  const result = await runKeepAlive(db.client, "vercel-cron", noWait);
+  eq("quatro operações reais, nesta ordem", db.calls, ["rpc", "system_keepalive", "segments", "regions"]);
+  eq("o resultado traz o contador gravado no banco", [result.pingCount, result.databaseOperations], [42, 4]);
+  eq("a origem fica registrada na linha", db.row().source, "vercel-cron");
+}
+{
+  const db = fakeSupabase({ rpc: { times: 9, status: 404, code: "PGRST202" } });
+  const error = await caught(runKeepAlive(db.client, "manual", noWait));
+  eq(
+    "sem a migration, falha no heartbeat sem repetir nem seguir adiante",
+    [error?.operation, error?.completedOperations, db.calls],
+    ["heartbeat", 0, ["rpc"]],
+  );
+}
+{
+  const db = fakeSupabase({ segments: { times: 1, status: 503 } });
+  const result = await runKeepAlive(db.client, "manual", noWait);
+  eq("uma leitura que falha uma vez é repetida e a execução fecha", result.databaseOperations, 4);
+}
+{
+  const db = fakeSupabase({ regions: { times: 9, status: 503 } });
+  const error = await caught(runKeepAlive(db.client, "manual", noWait));
+  eq(
+    "falha permanente na última leitura derruba a execução e conta o que chegou",
+    [error?.operation, error?.completedOperations],
+    ["database check 3 (regions)", 3],
+  );
+}
+{
+  const written = { id: 1, last_ping_at: "2026-10-22T09:00:00.000Z", ping_count: 42, source: "manual" };
+  eq("releitura com o mesmo ping confirma", confirmsHeartbeat(written, written), true);
+  eq(
+    "ping duplicado do cron entre escrita e releitura confirma",
+    confirmsHeartbeat(written, { ...written, ping_count: 43, last_ping_at: "2026-10-22T09:00:01.000Z" }),
+    true,
+  );
+  eq(
+    "releitura anterior à escrita não confirma",
+    confirmsHeartbeat(written, { ...written, ping_count: 41, last_ping_at: "2026-10-21T09:00:00.000Z" }),
+    false,
+  );
 }
 
 // ---------------------------------------------------------------------------
